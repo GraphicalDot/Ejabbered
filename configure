@@ -688,7 +688,6 @@ enable_pgsql
 enable_sqlite
 enable_pam
 enable_zlib
-enable_riak
 enable_redis
 enable_json
 enable_elixir
