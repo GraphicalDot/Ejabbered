@@ -1056,7 +1056,8 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 				fsm_next_state(wait_for_bind, StateData)
 	  	end;
 	_ ->
-	    ?INFO_MSG("~n ~n ~n NO ID FOUND ~n ~n ~n ", []),
+	    ?INFO_MSG("~n ~n ~n NO ID FOUND
+	     ~n ~n ~n ", []),
 	    case jlib:iq_query_info(El) of
 	      #iq{type = set, xmlns = ?NS_BIND, sub_el = SubEl} =
 		  IQ ->
