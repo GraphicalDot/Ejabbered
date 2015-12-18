@@ -3205,8 +3205,10 @@ has_saved_prev_id(User, Server) ->
            		<<"'">>, User, <<"';">>]) of
 
         {selected, [_] , [[PrevID]]} -> 
+		    ?INFO_MSG("~n ~n ~n FOUND ~p ~n ~n ~n ", [PrevID]),
         	{true, PrevID};
-        _ ->
+        SomethingElse ->
+	    ?INFO_MSG("~n ~n ~n FOUND ~p ~n ~n ~n ", [SomethingElse]),
         	false
     end.	
 
