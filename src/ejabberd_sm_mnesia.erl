@@ -28,6 +28,7 @@
 -include("ejabberd_sm.hrl").
 -include("jlib.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
+-include("mod_offline_message.hrl")
 
 -record(state, {}).
 
@@ -92,6 +93,9 @@ init([]) ->
     mnesia:add_table_copy(session, node(), ram_copies),
     mnesia:add_table_copy(session_counter, node(), ram_copies),
     mnesia:subscribe(system),
+    mnesia:create_table(away_message,
+      [{disc_copies, [node()]}, {type, bag},
+      {attributes, record_info(fields, away_message)}]),
     {ok, #state{}}.
 
 handle_call(_Request, _From, State) ->
