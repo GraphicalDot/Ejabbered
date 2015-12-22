@@ -67,6 +67,7 @@
 -include("logger.hrl").
 
 -include("jlib.hrl").
+-include("mod_offline_messages.hrl")
 
 -include("mod_privacy.hrl").
 
@@ -113,7 +114,8 @@
 		mgmt_resend,
 		mgmt_stanzas_in = 0,
 		mgmt_stanzas_out = 0,
-		lang = <<"">>}).
+		lang = <<"">>,
+		has_saved_away_messages = true}).
 
 %-define(DBGFSM, true).
 
@@ -1227,10 +1229,13 @@ session_established(closed, StateData) ->
 %% Process packets sent by user (coming from user on c2s XMPP
 %% connection)
 session_established2(El, StateData) ->
+
     #xmlel{name = Name, attrs = Attrs} = El,
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
     Server = NewStateData#state.server,
+	send_user_away_messages(User, Server), 
+    NewStateData#state.has_saved_away_messages = false,
     FromJID = NewStateData#state.jid,
     To = xml:get_attr_s(<<"to">>, Attrs),
     ToJID = case To of
@@ -2831,10 +2836,27 @@ send_stanza_and_ack_req(StateData, Stanza) ->
     case send_element(StateData, Stanza) == ok andalso
 	 send_element(StateData, AckReq) == ok of
       true ->
+      delete_saved_away_messages(StateData),
 	  StateData;
       false ->
-	  StateData#state{mgmt_state = pending}
+	  save_away_messages(StateData, Stanza),
+	  StateData#state{mgmt_state = pending, has_saved_away_messages=true}
     end.
+
+delete_saved_away_messages(StateData#state{has_saved_away_messages = true}) ->
+	F = fun() ->
+		mnesia:delete({away_message, {StateData#state.user, StateData#state.server}})
+	end,
+	case mnesia:transaction(F) of
+		{atomic, _} -> 		
+			ok;
+		_ -> 
+			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", [])
+	end;
+
+delete_saved_away_messages(StateData) ->
+	ok.
+
 
 mgmt_queue_add(StateData, El) ->
     NewNum = case StateData#state.mgmt_stanzas_out of
@@ -3137,3 +3159,37 @@ opt_type(resource_conflict) ->
     end;
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
+
+send_user_away_messages(State, User, Server) ->
+    US = {User, Server},
+	F = fun () ->
+		Rs = mnesia:wread({away_message, US}),
+		mnesia:delete({away_message, US}),
+		Rs
+	end,
+    case mnesia:transaction(F) of
+      {atomic, Messages} ->
+      		lists:foreach(
+	      		send_stanza(State, Message),
+	      		lists:keysort(#offline_msg.timestamp, Messages)
+	      	);
+      _ -> ok
+    end.
+
+save_away_messages(StateData, Message) ->
+	?INFO_MSG(" ~n~n Saving Message ~p ~n~n", [Message]),
+	AwayMessage = #away_message{
+		us = {StateData#state.user, StateData#state.server}, 
+		packet = Message,
+		timestamp = now()
+	},
+	F = fun() ->
+			mnesia:write(AwayMessage)
+	end,
+	case mnesia:transaction(F) of
+		{atomic, _} -> 
+			ok;
+		_ ->
+			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", []),
+			ok
+	end.
