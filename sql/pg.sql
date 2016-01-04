@@ -19,9 +19,25 @@
 CREATE TABLE users (
     username text PRIMARY KEY,
     "password" text NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now()
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    lat double precision,
+    lng double precision,
+    fb_id bigint,
+    fb_name text,
+    last_seen text,
+    resume_id text
 );
 
+CREATE EXTENSION cube;
+CREATE EXTENSION earthdistance;
+CREATE INDEX location_index on users USING gist(ll_to_earth(lat, lng));
+
+CREATE TABLE registered_users (
+    authorization_code text ,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    username text NOT NULL PRIMARY KEY,
+    expiration_time bigint
+);
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
 -- ALTER TABLE users ADD COLUMN salt text NOT NULL DEFAULT '';
@@ -325,3 +341,5 @@ CREATE TABLE sm (
 CREATE UNIQUE INDEX i_sm_sid ON sm USING btree (usec, pid);
 CREATE INDEX i_sm_node ON sm USING btree (node);
 CREATE INDEX i_sm_username ON sm USING btree (username);
+
+
