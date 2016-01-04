@@ -67,7 +67,7 @@
 -include("logger.hrl").
 
 -include("jlib.hrl").
--include("mod_offline_messages.hrl")
+-include("mod_away_message.hrl").
 
 -include("mod_privacy.hrl").
 
@@ -1234,8 +1234,6 @@ session_established2(El, StateData) ->
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
     Server = NewStateData#state.server,
-	send_user_away_messages(User, Server), 
-    NewStateData#state.has_saved_away_messages = false,
     FromJID = NewStateData#state.jid,
     To = xml:get_attr_s(<<"to">>, Attrs),
     ToJID = case To of
@@ -1309,6 +1307,8 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
+	send_user_away_messages(NewState, User, Server), 
+    NewState#state{has_saved_away_messages = false},
     fsm_next_state(session_established, NewState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
@@ -1459,6 +1459,7 @@ handle_info({route, _From, _To, {broadcast, Data}},
 handle_info({route, From, To,
              #xmlel{name = Name, attrs = Attrs, children = Els} = Packet},
             StateName, StateData) ->
+	?INFO_MSG("~n ~p GotPacket ~n ", [Packet]),
     {Pass, NewAttrs, NewState} = case Name of
 				   <<"presence">> ->
 				       State =
@@ -1904,28 +1905,38 @@ send_text(StateData, Text) when StateData#state.mgmt_state == active ->
     end;
 send_text(StateData, Text) ->
     ?DEBUG("Send XML on stream = ~p", [Text]),
-    (StateData#state.sockmod):send(StateData#state.socket, Text).
+    Result = (StateData#state.sockmod):send(StateData#state.socket, Text),
+    ?DEBUG("Got Result = ~p", [Result]),
+    Result.
+
 
 send_element(StateData, El) when StateData#state.mgmt_state == pending ->
     ?DEBUG("Cannot send element while waiting for resumption: ~p", [El]);
 send_element(StateData, El) when StateData#state.xml_socket ->
+    ?DEBUG("Sending element ~p ~n", [El]),
     (StateData#state.sockmod):send_xml(StateData#state.socket,
 				       {xmlstreamelement, El});
 send_element(StateData, El) ->
+    ?DEBUG("Sending element ~p ~n", [El]),
     send_text(StateData, xml:element_to_binary(El)).
 
 send_stanza(StateData, Stanza) when StateData#state.csi_state == inactive ->
+    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     csi_filter_stanza(StateData, Stanza);
 send_stanza(StateData, Stanza) when StateData#state.mgmt_state == pending ->
+    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     mgmt_queue_add(StateData, Stanza);
 send_stanza(StateData, Stanza) when StateData#state.mgmt_state == active ->
+    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     NewStateData = send_stanza_and_ack_req(StateData, Stanza),
     mgmt_queue_add(NewStateData, Stanza);
 send_stanza(StateData, Stanza) ->
+    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     send_element(StateData, Stanza),
     StateData.
 
 send_packet(StateData, Packet) ->
+    ?DEBUG("Sending Packet ~p ~n", [Packet]),
     case is_stanza(Packet) of
       true ->
 	  send_stanza(StateData, Packet);
@@ -2830,20 +2841,22 @@ update_num_stanzas_in(StateData, _El) ->
     StateData.
 
 send_stanza_and_ack_req(StateData, Stanza) ->
+	?INFO_MSG(" ~n~n FUNsend_stanza_and_ack_req ~p ~n~n", []),
     AckReq = #xmlel{name = <<"r">>,
 		    attrs = [{<<"xmlns">>, StateData#state.mgmt_xmlns}],
 		    children = []},
     case send_element(StateData, Stanza) == ok andalso
 	 send_element(StateData, AckReq) == ok of
       true ->
-      delete_saved_away_messages(StateData),
-	  StateData;
+	      delete_saved_away_messages(StateData),
+		  StateData;
       false ->
-	  save_away_messages(StateData, Stanza),
-	  StateData#state{mgmt_state = pending, has_saved_away_messages=true}
+
+	  	save_away_messages(StateData, Stanza),
+	  	StateData#state{mgmt_state = pending, has_saved_away_messages=true}
     end.
 
-delete_saved_away_messages(StateData#state{has_saved_away_messages = true}) ->
+delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData) ->
 	F = fun() ->
 		mnesia:delete({away_message, {StateData#state.user, StateData#state.server}})
 	end,
@@ -3170,14 +3183,16 @@ send_user_away_messages(State, User, Server) ->
     case mnesia:transaction(F) of
       {atomic, Messages} ->
       		lists:foreach(
-	      		send_stanza(State, Message),
-	      		lists:keysort(#offline_msg.timestamp, Messages)
+      			fun(Message) -> 
+		      		send_stanza(State, Message)
+		      	end,
+	      		lists:keysort(#away_message.timestamp, Messages)
 	      	);
       _ -> ok
     end.
 
 save_away_messages(StateData, Message) ->
-	?INFO_MSG(" ~n~n Saving Message ~p ~n~n", [Message]),
+	?INFO_MSG(" ~n~n FUNsave_away_messages ~p ~n~n", [Message]),
 	AwayMessage = #away_message{
 		us = {StateData#state.user, StateData#state.server}, 
 		packet = Message,

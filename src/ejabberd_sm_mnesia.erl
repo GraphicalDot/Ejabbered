@@ -28,7 +28,7 @@
 -include("ejabberd_sm.hrl").
 -include("jlib.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
--include("mod_offline_message.hrl")
+-include("mod_away_message.hrl").
 
 -record(state, {}).
 
