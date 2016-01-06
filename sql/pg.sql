@@ -28,6 +28,11 @@ CREATE TABLE users (
     resume_id text
 );
 
+-- To support SCRAM auth:
+-- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
+-- ALTER TABLE users ADD COLUMN salt text NOT NULL DEFAULT '';
+-- ALTER TABLE users ADD COLUMN iterationcount integer NOT NULL DEFAULT 0;
+
 CREATE EXTENSION cube;
 CREATE EXTENSION earthdistance;
 CREATE INDEX location_index on users USING gist(ll_to_earth(lat, lng));
@@ -38,10 +43,18 @@ CREATE TABLE registered_users (
     username text NOT NULL PRIMARY KEY,
     expiration_time bigint
 );
--- To support SCRAM auth:
--- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
--- ALTER TABLE users ADD COLUMN salt text NOT NULL DEFAULT '';
--- ALTER TABLE users ADD COLUMN iterationcount integer NOT NULL DEFAULT 0;
+
+CREATE TABLE interest (
+    interest_id SERIAL PRIMARY KEY ,
+    interest_name text UNIQUE NOT NULL
+);
+
+CREATE TABLE users_interest (
+    interest_id integer REFERENCES interest ON DELETE CASCADE,
+    username text REFERENCES users ON DELETE CASCADE,
+    PRIMARY KEY (interest_id, username)
+);
+
 
 CREATE TABLE last (
     username text PRIMARY KEY,
@@ -341,5 +354,3 @@ CREATE TABLE sm (
 CREATE UNIQUE INDEX i_sm_sid ON sm USING btree (usec, pid);
 CREATE INDEX i_sm_node ON sm USING btree (node);
 CREATE INDEX i_sm_username ON sm USING btree (username);
-
-
