@@ -1307,7 +1307,7 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-	send_user_away_messages(NewState, User, Server), 
+	  % send_user_away_messages(NewState, User, Server),
     NewState#state{has_saved_away_messages = false},
     fsm_next_state(session_established, NewState).
 
@@ -1682,7 +1682,8 @@ handle_info({route, From, To,
 								 From, To,
 								 Packet, in)
 					   of
-					 allow -> {true, Attrs, StateData};
+					 allow -> 
+					 	{true, Attrs, StateData};
 					 deny ->
                                                case xml:get_attr_s(<<"type">>, Attrs) of
                                                    <<"error">> -> ok;
@@ -1708,6 +1709,12 @@ handle_info({route, From, To,
 			    NewState#state.server,
 			    FixedPacket0,
 			    [NewState, NewState#state.jid, From, To]),
+		case Name of
+			<<"message">> ->
+				save_away_messages(StateData, FixedPacket);
+			_ -> 
+				ok
+		end,
 	    SentStateData = send_packet(NewState, FixedPacket),
 	    ejabberd_hooks:run(c2s_loop_debug, [{route, From, To, Packet}]),
 	    fsm_next_state(StateName, SentStateData);
@@ -1904,9 +1911,10 @@ send_text(StateData, Text) when StateData#state.mgmt_state == active ->
 	  ok
     end;
 send_text(StateData, Text) ->
+    ?DEBUG("FUN Send XML on stream = ~p", [Text]),
     ?DEBUG("Send XML on stream = ~p", [Text]),
     Result = (StateData#state.sockmod):send(StateData#state.socket, Text),
-    ?DEBUG("Got Result = ~p", [Result]),
+    ?DEBUG("FUN Got Result = ~p", [Result]),
     Result.
 
 
@@ -2821,10 +2829,12 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     when H > NumStanzasOut ->
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
+	delete_saved_away_messages(StateData, H),
     mgmt_queue_drop(StateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
+	delete_saved_away_messages(StateData, H),
     mgmt_queue_drop(StateData, H).
 
 update_num_stanzas_in(#state{mgmt_state = active} = StateData, El) ->
@@ -2841,24 +2851,21 @@ update_num_stanzas_in(StateData, _El) ->
     StateData.
 
 send_stanza_and_ack_req(StateData, Stanza) ->
-	?INFO_MSG(" ~n~n FUNsend_stanza_and_ack_req ~p ~n~n", []),
+	?INFO_MSG(" ~n~n FUN send_stanza_and_ack_req ~p ~n~n", []),
     AckReq = #xmlel{name = <<"r">>,
 		    attrs = [{<<"xmlns">>, StateData#state.mgmt_xmlns}],
 		    children = []},
     case send_element(StateData, Stanza) == ok andalso
 	 send_element(StateData, AckReq) == ok of
       true ->
-	      delete_saved_away_messages(StateData),
 		  StateData;
       false ->
-
-	  	save_away_messages(StateData, Stanza),
-	  	StateData#state{mgmt_state = pending, has_saved_away_messages=true}
+	  	StateData#state{mgmt_state = pending}
     end.
 
-delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData) ->
+delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData, HCount) ->
 	F = fun() ->
-		mnesia:delete({away_message, {StateData#state.user, StateData#state.server}})
+		mnesia:delete({away_message, {StateData#state.user, StateData#state.server, HCount}})
 	end,
 	case mnesia:transaction(F) of
 		{atomic, _} -> 		
@@ -2867,7 +2874,7 @@ delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData) -
 			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", [])
 	end;
 
-delete_saved_away_messages(StateData) ->
+delete_saved_away_messages(_, _) ->
 	ok.
 
 
@@ -3183,25 +3190,30 @@ send_user_away_messages(State, User, Server) ->
     case mnesia:transaction(F) of
       {atomic, Messages} ->
       		lists:foreach(
-      			fun(Message) -> 
-		      		send_stanza(State, Message)
-		      	end,
+      			fun(#xmlel{attrs = Attrs} = El) ->
+									From_s = xml:get_attr_s(<<"from">>, Attrs),
+									From = jlib:string_to_jid(From_s),
+									To_s = xml:get_attr_s(<<"to">>, Attrs),
+									To = jlib:string_to_jid(To_s),
+									ejabberd_router:route(From, To, El)
+								end,
 	      		lists:keysort(#away_message.timestamp, Messages)
 	      	);
       _ -> ok
     end.
 
 save_away_messages(StateData, Message) ->
-	?INFO_MSG(" ~n~n FUNsave_away_messages ~p ~n~n", [Message]),
 	AwayMessage = #away_message{
 		us = {StateData#state.user, StateData#state.server}, 
 		packet = Message,
+		h_count = StateData#state.mgmt_stanzas_out,
 		timestamp = now()
 	},
 	F = fun() ->
 			mnesia:write(AwayMessage)
 	end,
-	case mnesia:transaction(F) of
+	Result = mnesia:transaction(F),
+	case Result of
 		{atomic, _} -> 
 			ok;
 		_ ->
