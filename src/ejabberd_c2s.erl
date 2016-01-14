@@ -2867,11 +2867,12 @@ delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData, H
 	F = fun() ->
 		mnesia:delete({away_message, {StateData#state.user, StateData#state.server, HCount}})
 	end,
-	case mnesia:transaction(F) of
+	Result = mnesia:transaction(F),
+	case Result of
 		{atomic, _} -> 		
 			ok;
 		_ -> 
-			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", [])
+			?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
 	end;
 
 delete_saved_away_messages(_, _) ->
@@ -3204,9 +3205,8 @@ send_user_away_messages(State, User, Server) ->
 
 save_away_messages(StateData, Message) ->
 	AwayMessage = #away_message{
-		us = {StateData#state.user, StateData#state.server}, 
+		ush = {StateData#state.user, StateData#state.server, StateData#state.mgmt_stanzas_out}, 
 		packet = Message,
-		h_count = StateData#state.mgmt_stanzas_out,
 		timestamp = now()
 	},
 	F = fun() ->
