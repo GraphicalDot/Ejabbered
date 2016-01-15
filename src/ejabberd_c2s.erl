@@ -115,7 +115,7 @@
 		mgmt_stanzas_in = 0,
 		mgmt_stanzas_out = 0,
 		lang = <<"">>,
-		has_saved_away_messages = true}).
+		message_h_counts = []}).
 
 %-define(DBGFSM, true).
 
@@ -1308,7 +1308,6 @@ session_established2(El, StateData) ->
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
 	  % send_user_away_messages(NewState, User, Server),
-    NewState#state{has_saved_away_messages = false},
     fsm_next_state(session_established, NewState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
@@ -1709,13 +1708,13 @@ handle_info({route, From, To,
 			    NewState#state.server,
 			    FixedPacket0,
 			    [NewState, NewState#state.jid, From, To]),
-		case Name of
-			<<"message">> ->
-				save_away_messages(StateData, FixedPacket);
+		case should_save_message(FixedPacket) of
+			true ->
+				SavedStateData = save_away_messages(NewState, FixedPacket);
 			_ -> 
-				ok
+				SavedStateData = NewState
 		end,
-	    SentStateData = send_packet(NewState, FixedPacket),
+	    SentStateData = send_packet(SavedStateData, FixedPacket),
 	    ejabberd_hooks:run(c2s_loop_debug, [{route, From, To, Packet}]),
 	    fsm_next_state(StateName, SentStateData);
 	true ->
@@ -2829,13 +2828,13 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     when H > NumStanzasOut ->
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	delete_saved_away_messages(StateData, H),
-    mgmt_queue_drop(StateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
+	NewStateData = delete_saved_away_messages(StateData, H),
+    mgmt_queue_drop(NewStateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	delete_saved_away_messages(StateData, H),
-    mgmt_queue_drop(StateData, H).
+	NewStateData = delete_saved_away_messages(StateData, H),
+    mgmt_queue_drop(NewStateData, H).
 
 update_num_stanzas_in(#state{mgmt_state = active} = StateData, El) ->
     NewNum = case {is_stanza(El), StateData#state.mgmt_stanzas_in} of
@@ -2863,20 +2862,6 @@ send_stanza_and_ack_req(StateData, Stanza) ->
 	  	StateData#state{mgmt_state = pending}
     end.
 
-delete_saved_away_messages(#state{has_saved_away_messages = true} = StateData, HCount) ->
-	F = fun() ->
-		mnesia:delete({away_message, {StateData#state.user, StateData#state.server, HCount}})
-	end,
-	Result = mnesia:transaction(F),
-	case Result of
-		{atomic, _} -> 		
-			ok;
-		_ -> 
-			?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
-	end;
-
-delete_saved_away_messages(_, _) ->
-	ok.
 
 
 mgmt_queue_add(StateData, El) ->
@@ -3204,9 +3189,19 @@ send_user_away_messages(State, User, Server) ->
     end.
 
 save_away_messages(StateData, Message) ->
+    ?DEBUG(" Saving h_count ~B ", [StateData#state.mgmt_stanzas_out]),
+    case is_integer(StateData#state.mgmt_stanzas_out) of
+    	true ->
+		    NewHCount = [StateData#state.mgmt_stanzas_out|StateData#state.message_h_counts];
+    	_ -> 
+		    NewHCount = StateData#state.message_h_counts
+    end,
+
+    NewStateData = StateData#state{message_h_counts = NewHCount}, 
 	AwayMessage = #away_message{
-		ush = {StateData#state.user, StateData#state.server, StateData#state.mgmt_stanzas_out}, 
+		us = {StateData#state.user, StateData#state.server},
 		packet = Message,
+		h_count = StateData#state.mgmt_stanzas_out, 
 		timestamp = now()
 	},
 	F = fun() ->
@@ -3219,4 +3214,85 @@ save_away_messages(StateData, Message) ->
 		_ ->
 			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", []),
 			ok
+	end,
+	NewStateData.
+
+delete_saved_away_messages(StateData, HCount) ->
+	US = {StateData#state.user, StateData#state.server},
+	case get_unacked_h_list(HCount, StateData#state.message_h_counts) of
+		{new_list, NewHList} -> 
+		    ?DEBUG(" Deleting h_count ~B for ~s ", [HCount, StateData#state.user]),
+			NewStateData = StateData#state{message_h_counts = NewHList},
+			F = fun F() ->
+			    case mnesia:select(
+			    	away_message,
+			        [
+			        	{
+			        	#away_message{us = US, h_count = '$1', _ = '_'},
+				 		[
+				 			{'=<', '$1', HCount}
+				 		],
+				 		['$_']
+				 		}
+				 	]
+				 ) of
+				    Messages -> 
+						lists:foreach(
+							fun(Message) -> 
+								mnesia:delete_object(Message),
+							    ?DEBUG(" Deleting ~s ", [Message])
+							end,
+							Messages
+						);
+				    _ -> ok
+			    end
+			end,
+			Result = mnesia:transaction(F),
+			case Result of
+				{atomic, _} -> 		
+					ok;
+				_ -> 
+					?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
+			end;
+		_ -> 
+			NewStateData = StateData
+	end,
+	NewStateData;
+
+delete_saved_away_messages(StateData, _) ->
+	StateData.
+
+
+get_unacked_h_list(HCount, HList) -> 
+	NewHList = lists:filtermap(
+		fun(Elem) -> 
+			case HCount < Elem of 
+				true -> 
+					{true, Elem}; 
+				_ -> 
+					false 
+			end 
+		end,
+		HList
+		),
+
+	case NewHList =/= HList of
+		true ->
+			{new_list, NewHList};
+		_ ->
+			same_list
 	end.
+
+should_save_message(#xmlel{name = <<"message">>} = Packet) ->
+    case {xml:get_attr_s(<<"type">>, Packet#xmlel.attrs),
+          xml:get_subtag_cdata(Packet, <<"body">>)} of
+        {<<"error">>, _} ->
+            false;
+        {_, <<>>} ->
+            %% Empty body
+            false;
+        _ ->
+            true
+    end;
+should_save_message(#xmlel{}) ->
+    false.
