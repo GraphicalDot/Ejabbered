@@ -1307,7 +1307,7 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-	  % send_user_away_messages(NewState, User, Server),
+	send_user_away_messages(NewState, User, Server),
     fsm_next_state(session_established, NewState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
@@ -1822,6 +1822,7 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A}) ->
 %% Returns: any
 %%----------------------------------------------------------------------
 terminate(_Reason, StateName, StateData) ->
+	delete_all_saved_away_messages(StateData),
     case StateData#state.mgmt_state of
       resumed ->
 	  ?INFO_MSG("Closing former stream of resumed session for ~s",
@@ -3296,3 +3297,16 @@ should_save_message(#xmlel{name = <<"message">>} = Packet) ->
     end;
 should_save_message(#xmlel{}) ->
     false.
+
+delete_all_saved_away_messages(StateData) ->
+	US = {StateData#state.user, StateData#state.server},
+	Q = fun() ->
+		mnesia:delete(away_message, US, write)
+	end,
+	case mnesia:transaction(Q) of
+		{atomic, _} -> 
+			ok;
+		_ ->
+			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", []),
+			ok
+	end.
