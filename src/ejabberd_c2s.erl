@@ -67,7 +67,7 @@
 -include("logger.hrl").
 
 -include("jlib.hrl").
--include("mod_away_message.hrl").
+-include("mod_unreceived_message.hrl").
 
 -include("mod_privacy.hrl").
 
@@ -1122,6 +1122,7 @@ wait_for_session({xmlstreamelement, El}, StateData) ->
 		    ?INFO_MSG("(~w) Opened session for ~s",
 			      [NewStateData#state.socket,
 			       jlib:jid_to_string(JID)]),
+			send_user_unreceived_messages(U, NewStateData#state.server),
 		    Res = jlib:make_result_iq_reply(El#xmlel{children = []}),
 		    NewState = send_stanza(NewStateData, Res),
 		    change_shaper(NewState, JID),
@@ -1307,7 +1308,6 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-	send_user_away_messages(NewState, User, Server),
     fsm_next_state(session_established, NewState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
@@ -1458,7 +1458,6 @@ handle_info({route, _From, _To, {broadcast, Data}},
 handle_info({route, From, To,
              #xmlel{name = Name, attrs = Attrs, children = Els} = Packet},
             StateName, StateData) ->
-	?INFO_MSG("~n ~p GotPacket ~n ", [Packet]),
     {Pass, NewAttrs, NewState} = case Name of
 				   <<"presence">> ->
 				       State =
@@ -1710,7 +1709,7 @@ handle_info({route, From, To,
 			    [NewState, NewState#state.jid, From, To]),
 		case should_save_message(FixedPacket) of
 			true ->
-				SavedStateData = save_away_messages(NewState, FixedPacket);
+				SavedStateData = save_unreceived_messages(NewState, FixedPacket);
 			_ -> 
 				SavedStateData = NewState
 		end,
@@ -1822,7 +1821,7 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A}) ->
 %% Returns: any
 %%----------------------------------------------------------------------
 terminate(_Reason, StateName, StateData) ->
-	delete_all_saved_away_messages(StateData),
+	delete_all_saved_unreceived_messages(StateData),
     case StateData#state.mgmt_state of
       resumed ->
 	  ?INFO_MSG("Closing former stream of resumed session for ~s",
@@ -1911,35 +1910,27 @@ send_text(StateData, Text) when StateData#state.mgmt_state == active ->
 	  ok
     end;
 send_text(StateData, Text) ->
-    ?DEBUG("FUN Send XML on stream = ~p", [Text]),
     ?DEBUG("Send XML on stream = ~p", [Text]),
     Result = (StateData#state.sockmod):send(StateData#state.socket, Text),
-    ?DEBUG("FUN Got Result = ~p", [Result]),
     Result.
 
 
 send_element(StateData, El) when StateData#state.mgmt_state == pending ->
     ?DEBUG("Cannot send element while waiting for resumption: ~p", [El]);
 send_element(StateData, El) when StateData#state.xml_socket ->
-    ?DEBUG("Sending element ~p ~n", [El]),
     (StateData#state.sockmod):send_xml(StateData#state.socket,
 				       {xmlstreamelement, El});
 send_element(StateData, El) ->
-    ?DEBUG("Sending element ~p ~n", [El]),
     send_text(StateData, xml:element_to_binary(El)).
 
 send_stanza(StateData, Stanza) when StateData#state.csi_state == inactive ->
-    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     csi_filter_stanza(StateData, Stanza);
 send_stanza(StateData, Stanza) when StateData#state.mgmt_state == pending ->
-    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     mgmt_queue_add(StateData, Stanza);
 send_stanza(StateData, Stanza) when StateData#state.mgmt_state == active ->
-    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     NewStateData = send_stanza_and_ack_req(StateData, Stanza),
     mgmt_queue_add(NewStateData, Stanza);
 send_stanza(StateData, Stanza) ->
-    ?DEBUG("Sending stanza ~p ~n", [Stanza]),
     send_element(StateData, Stanza),
     StateData.
 
@@ -2829,12 +2820,12 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     when H > NumStanzasOut ->
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	NewStateData = delete_saved_away_messages(StateData, H),
+	NewStateData = delete_saved_unreceived_messages(StateData, H),
     mgmt_queue_drop(NewStateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	NewStateData = delete_saved_away_messages(StateData, H),
+	NewStateData = delete_saved_unreceived_messages(StateData, H),
     mgmt_queue_drop(NewStateData, H).
 
 update_num_stanzas_in(#state{mgmt_state = active} = StateData, El) ->
@@ -2851,7 +2842,6 @@ update_num_stanzas_in(StateData, _El) ->
     StateData.
 
 send_stanza_and_ack_req(StateData, Stanza) ->
-	?INFO_MSG(" ~n~n FUN send_stanza_and_ack_req ~p ~n~n", []),
     AckReq = #xmlel{name = <<"r">>,
 		    attrs = [{<<"xmlns">>, StateData#state.mgmt_xmlns}],
 		    children = []},
@@ -3167,30 +3157,30 @@ opt_type(resource_conflict) ->
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
 
-send_user_away_messages(State, User, Server) ->
+send_user_unreceived_messages(User, Server) ->
     US = {User, Server},
 	F = fun () ->
-		Rs = mnesia:wread({away_message, US}),
-		mnesia:delete({away_message, US}),
+		Rs = mnesia:wread({unreceived_message, US}),
+		mnesia:delete({unreceived_message, US}),
 		Rs
 	end,
     case mnesia:transaction(F) of
-      {atomic, Messages} ->
+      {atomic, UnreceivedMessages} ->
       		lists:foreach(
-      			fun(#xmlel{attrs = Attrs} = El) ->
+      			fun(#unreceived_message.packet = El) ->
+      								#xmlel{attrs = Attrs} = El,
 									From_s = xml:get_attr_s(<<"from">>, Attrs),
 									From = jlib:string_to_jid(From_s),
 									To_s = xml:get_attr_s(<<"to">>, Attrs),
 									To = jlib:string_to_jid(To_s),
 									ejabberd_router:route(From, To, El)
 								end,
-	      		lists:keysort(#away_message.timestamp, Messages)
+	      		lists:keysort(#unreceived_message.timestamp, UnreceivedMessages)
 	      	);
       _ -> ok
     end.
 
-save_away_messages(StateData, Message) ->
-    ?DEBUG(" Saving h_count ~B ", [StateData#state.mgmt_stanzas_out]),
+save_unreceived_messages(StateData, Message) ->
     case is_integer(StateData#state.mgmt_stanzas_out) of
     	true ->
 		    NewHCount = [StateData#state.mgmt_stanzas_out|StateData#state.message_h_counts];
@@ -3199,7 +3189,7 @@ save_away_messages(StateData, Message) ->
     end,
 
     NewStateData = StateData#state{message_h_counts = NewHCount}, 
-	AwayMessage = #away_message{
+	AwayMessage = #unreceived_message{
 		us = {StateData#state.user, StateData#state.server},
 		packet = Message,
 		h_count = StateData#state.mgmt_stanzas_out, 
@@ -3218,18 +3208,17 @@ save_away_messages(StateData, Message) ->
 	end,
 	NewStateData.
 
-delete_saved_away_messages(StateData, HCount) ->
+delete_saved_unreceived_messages(StateData, HCount) ->
 	US = {StateData#state.user, StateData#state.server},
 	case get_unacked_h_list(HCount, StateData#state.message_h_counts) of
 		{new_list, NewHList} -> 
-		    ?DEBUG(" Deleting h_count ~B for ~s ", [HCount, StateData#state.user]),
 			NewStateData = StateData#state{message_h_counts = NewHList},
 			F = fun F() ->
 			    case mnesia:select(
-			    	away_message,
+			    	unreceived_message,
 			        [
 			        	{
-			        	#away_message{us = US, h_count = '$1', _ = '_'},
+			        	#unreceived_message{us = US, h_count = '$1', _ = '_'},
 				 		[
 				 			{'=<', '$1', HCount}
 				 		],
@@ -3260,7 +3249,7 @@ delete_saved_away_messages(StateData, HCount) ->
 	end,
 	NewStateData;
 
-delete_saved_away_messages(StateData, _) ->
+delete_saved_unreceived_messages(StateData, _) ->
 	StateData.
 
 
@@ -3298,10 +3287,10 @@ should_save_message(#xmlel{name = <<"message">>} = Packet) ->
 should_save_message(#xmlel{}) ->
     false.
 
-delete_all_saved_away_messages(StateData) ->
+delete_all_saved_unreceived_messages(StateData) ->
 	US = {StateData#state.user, StateData#state.server},
 	Q = fun() ->
-		mnesia:delete(away_message, US, write)
+		mnesia:delete(unreceived_message, US, write)
 	end,
 	case mnesia:transaction(Q) of
 		{atomic, _} -> 
