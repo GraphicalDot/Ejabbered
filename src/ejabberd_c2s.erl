@@ -65,58 +65,12 @@
 
 -include("ejabberd.hrl").
 -include("logger.hrl").
-
 -include("jlib.hrl").
--include("mod_unreceived_message.hrl").
 
--include("mod_privacy.hrl").
-
--define(SETS, gb_sets).
--define(DICT, dict).
+-include("ejabberd_c2s.hrl").
 
 %% pres_a contains all the presence available send (either through roster mechanism or directed).
 %% Directed presence unavailable remove user from pres_a.
--record(state, {socket,
-		sockmod,
-		socket_monitor,
-		xml_socket,
-		streamid,
-		sasl_state,
-		access,
-		shaper,
-		zlib = false,
-		tls = false,
-		tls_required = false,
-		tls_enabled = false,
-		tls_options = [],
-		authenticated = false,
-		jid,
-		user = <<"">>, server = <<"">>, resource = <<"">>,
-		sid,
-		pres_t = ?SETS:new(),
-		pres_f = ?SETS:new(),
-		pres_a = ?SETS:new(),
-		pres_last,
-		pres_timestamp,
-		privacy_list = #userlist{},
-		conn = unknown,
-		auth_module = unknown,
-		ip,
-		aux_fields = [],
-		csi_state = active,
-		csi_queue = [],
-		mgmt_state,
-		mgmt_xmlns,
-		mgmt_queue,
-		mgmt_max_queue,
-		mgmt_pending_since,
-		mgmt_timeout,
-		mgmt_resend,
-		mgmt_stanzas_in = 0,
-		mgmt_stanzas_out = 0,
-		lang = <<"">>,
-		message_h_counts = []}).
-
 %-define(DBGFSM, true).
 
 -ifdef(DBGFSM).
@@ -333,7 +287,7 @@ init([{SockMod, Socket}, Opts]) ->
 		       xml_socket = XMLSocket, zlib = Zlib, tls = TLS,
 		       tls_required = StartTLSRequired,
 		       tls_enabled = TLSEnabled, tls_options = TLSOpts,
-		       sid = {now(), self()}, streamid = new_id(),
+		       sid = {erlang:timestamp(), self()}, streamid = new_id(),
 		       access = Access, shaper = Shaper, ip = IP,
 		       mgmt_state = StreamMgmtState,
 		       mgmt_max_queue = MaxAckQueue,
@@ -1027,7 +981,7 @@ resource_conflict_action(U, S, R) ->
       setresource ->
 	  Rnew = iolist_to_binary([randoms:get_string()
                                    | [jlib:integer_to_binary(X)
-                                      || X <- tuple_to_list(now())]]),
+                                      || X <- tuple_to_list(erlang:timestamp())]]),
 	  {accept_resource, Rnew}
     end.
 
@@ -1057,7 +1011,7 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 		<<"">> ->
                       iolist_to_binary([randoms:get_string()
                                         | [jlib:integer_to_binary(X)
-                                           || X <- tuple_to_list(now())]]);
+                                           || X <- tuple_to_list(erlang:timestamp())]]);
 		Resource -> Resource
 	      end,
 	  case R of
@@ -1122,7 +1076,13 @@ wait_for_session({xmlstreamelement, El}, StateData) ->
 		    ?INFO_MSG("(~w) Opened session for ~s",
 			      [NewStateData#state.socket,
 			       jlib:jid_to_string(JID)]),
-			send_user_unreceived_messages(U, NewStateData#state.server),
+			ejabberd_hooks:run(
+				user_session_start, 
+				StateData#state.server,
+			   [
+			   		JID
+			    ]
+			),
 		    Res = jlib:make_result_iq_reply(El#xmlel{children = []}),
 		    NewState = send_stanza(NewStateData, Res),
 		    change_shaper(NewState, JID),
@@ -1707,13 +1667,7 @@ handle_info({route, From, To,
 			    NewState#state.server,
 			    FixedPacket0,
 			    [NewState, NewState#state.jid, From, To]),
-		case should_save_message(FixedPacket) of
-			true ->
-				SavedStateData = save_unreceived_messages(NewState, FixedPacket);
-			_ -> 
-				SavedStateData = NewState
-		end,
-	    SentStateData = send_packet(SavedStateData, FixedPacket),
+	    SentStateData = send_packet(NewState, FixedPacket),
 	    ejabberd_hooks:run(c2s_loop_debug, [{route, From, To, Packet}]),
 	    fsm_next_state(StateName, SentStateData);
 	true ->
@@ -1820,8 +1774,15 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A}) ->
 %% Purpose: Shutdown the fsm
 %% Returns: any
 %%----------------------------------------------------------------------
-terminate(_Reason, StateName, StateData) ->
-	delete_all_saved_unreceived_messages(StateData),
+terminate(Reason, StateName, StateData) ->
+    ejabberd_hooks:run(
+    	user_session_terminate_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			Reason
+		]
+	),
     case StateData#state.mgmt_state of
       resumed ->
 	  ?INFO_MSG("Closing former stream of resumed session for ~s",
@@ -2115,7 +2076,7 @@ presence_update(From, Packet, StateData) ->
 	  FromUnavail = (StateData#state.pres_last == undefined),
 	  ?DEBUG("from unavail = ~p~n", [FromUnavail]),
 	  NewStateData = StateData#state{pres_last = Packet,
-					 pres_timestamp = now()},
+					 pres_timestamp = erlang:timestamp()},
 	  NewState = if FromUnavail ->
 			    ejabberd_hooks:run(user_available_hook,
 					       NewStateData#state.server,
@@ -2820,13 +2781,27 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     when H > NumStanzasOut ->
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	NewStateData = delete_saved_unreceived_messages(StateData, H),
-    mgmt_queue_drop(NewStateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
+    ejabberd_hooks:run(
+    	user_packet_confirmation_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			H
+		]
+	),
+    mgmt_queue_drop(StateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-	NewStateData = delete_saved_unreceived_messages(StateData, H),
-    mgmt_queue_drop(NewStateData, H).
+    ejabberd_hooks:run(
+    	user_packet_confirmation_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			H
+		]
+	),
+    mgmt_queue_drop(StateData, H).
 
 update_num_stanzas_in(#state{mgmt_state = active} = StateData, El) ->
     NewNum = case {is_stanza(El), StateData#state.mgmt_stanzas_in} of
@@ -2862,7 +2837,7 @@ mgmt_queue_add(StateData, El) ->
 	       Num ->
 		   Num + 1
 	     end,
-    NewQueue = queue:in({NewNum, now(), El}, StateData#state.mgmt_queue),
+    NewQueue = queue:in({NewNum, erlang:timestamp(), El}, StateData#state.mgmt_queue),
     NewState = StateData#state{mgmt_queue = NewQueue,
 			       mgmt_stanzas_out = NewNum},
     check_queue_length(NewState).
@@ -3066,7 +3041,7 @@ csi_queue_add(#state{csi_queue = Queue} = StateData, Stanza) ->
       true -> csi_queue_add(csi_queue_flush(StateData), Stanza);
       false ->
 	  From = xml:get_tag_attr_s(<<"from">>, Stanza),
-	  NewQueue = lists:keystore(From, 1, Queue, {From, now(), Stanza}),
+	  NewQueue = lists:keystore(From, 1, Queue, {From, erlang:timestamp(), Stanza}),
 	  StateData#state{csi_queue = NewQueue}
     end.
 
@@ -3156,146 +3131,3 @@ opt_type(resource_conflict) ->
     end;
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
-
-send_user_unreceived_messages(User, Server) ->
-    US = {User, Server},
-	F = fun () ->
-		Rs = mnesia:wread({unreceived_message, US}),
-		mnesia:delete({unreceived_message, US}),
-		Rs
-	end,
-    case mnesia:transaction(F) of
-      {atomic, UnreceivedMessages} ->
-      		lists:foreach(
-      			fun(#unreceived_message.packet = El) ->
-      								#xmlel{attrs = Attrs} = El,
-									From_s = xml:get_attr_s(<<"from">>, Attrs),
-									From = jlib:string_to_jid(From_s),
-									To_s = xml:get_attr_s(<<"to">>, Attrs),
-									To = jlib:string_to_jid(To_s),
-									ejabberd_router:route(From, To, El)
-								end,
-	      		lists:keysort(#unreceived_message.timestamp, UnreceivedMessages)
-	      	);
-      _ -> ok
-    end.
-
-save_unreceived_messages(StateData, Message) ->
-    case is_integer(StateData#state.mgmt_stanzas_out) of
-    	true ->
-		    NewHCount = [StateData#state.mgmt_stanzas_out|StateData#state.message_h_counts];
-    	_ -> 
-		    NewHCount = StateData#state.message_h_counts
-    end,
-
-    NewStateData = StateData#state{message_h_counts = NewHCount}, 
-	AwayMessage = #unreceived_message{
-		us = {StateData#state.user, StateData#state.server},
-		packet = Message,
-		h_count = StateData#state.mgmt_stanzas_out, 
-		timestamp = now()
-	},
-	F = fun() ->
-			mnesia:write(AwayMessage)
-	end,
-	Result = mnesia:transaction(F),
-	case Result of
-		{atomic, _} -> 
-			ok;
-		_ ->
-			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", []),
-			ok
-	end,
-	NewStateData.
-
-delete_saved_unreceived_messages(StateData, HCount) ->
-	US = {StateData#state.user, StateData#state.server},
-	case get_unacked_h_list(HCount, StateData#state.message_h_counts) of
-		{new_list, NewHList} -> 
-			NewStateData = StateData#state{message_h_counts = NewHList},
-			F = fun F() ->
-			    case mnesia:select(
-			    	unreceived_message,
-			        [
-			        	{
-			        	#unreceived_message{us = US, h_count = '$1', _ = '_'},
-				 		[
-				 			{'=<', '$1', HCount}
-				 		],
-				 		['$_']
-				 		}
-				 	]
-				 ) of
-				    Messages -> 
-						lists:foreach(
-							fun(Message) -> 
-								mnesia:delete_object(Message),
-							    ?DEBUG(" Deleting ~s ", [Message])
-							end,
-							Messages
-						);
-				    _ -> ok
-			    end
-			end,
-			Result = mnesia:transaction(F),
-			case Result of
-				{atomic, _} -> 		
-					ok;
-				_ -> 
-					?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
-			end;
-		_ -> 
-			NewStateData = StateData
-	end,
-	NewStateData;
-
-delete_saved_unreceived_messages(StateData, _) ->
-	StateData.
-
-
-get_unacked_h_list(HCount, HList) -> 
-	NewHList = lists:filtermap(
-		fun(Elem) -> 
-			case HCount < Elem of 
-				true -> 
-					{true, Elem}; 
-				_ -> 
-					false 
-			end 
-		end,
-		HList
-		),
-
-	case NewHList =/= HList of
-		true ->
-			{new_list, NewHList};
-		_ ->
-			same_list
-	end.
-
-should_save_message(#xmlel{name = <<"message">>} = Packet) ->
-    case {xml:get_attr_s(<<"type">>, Packet#xmlel.attrs),
-          xml:get_subtag_cdata(Packet, <<"body">>)} of
-        {<<"error">>, _} ->
-            false;
-        {_, <<>>} ->
-            %% Empty body
-            false;
-        _ ->
-            true
-    end;
-should_save_message(#xmlel{}) ->
-    false.
-
-delete_all_saved_unreceived_messages(StateData) ->
-	US = {StateData#state.user, StateData#state.server},
-	Q = fun() ->
-		mnesia:delete(unreceived_message, US, write)
-	end,
-	case mnesia:transaction(Q) of
-		{atomic, _} -> 
-			ok;
-		_ ->
-			?INFO_MSG(" ~n Message couldn't be saved, and no failback specified ~n ", []),
-			ok
-	end.
