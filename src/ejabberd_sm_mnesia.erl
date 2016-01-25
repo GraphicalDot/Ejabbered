@@ -22,13 +22,13 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+	 terminate/2, code_change/3, get_session_resume_id/1]).
 
 -include("ejabberd.hrl").
 -include("ejabberd_sm.hrl").
 -include("jlib.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
-
+-include("session_resume_id.hrl").
 -record(state, {}).
 
 %%%===================================================================
@@ -84,6 +84,9 @@ init([]) ->
     mnesia:create_table(session,
 			[{ram_copies, [node()]},
 			 {attributes, record_info(fields, session)}]),
+    mnesia:create_table(session_resume_id,
+      [{ram_copies, [node()]},
+       {attributes, record_info(fields, session_resume_id)}]),
     mnesia:create_table(session_counter,
 			[{ram_copies, [node()]},
 			 {attributes, record_info(fields, session_counter)}]),
@@ -143,3 +146,13 @@ update_tables() ->
 	false ->
 	    ok
     end.
+
+get_session_resume_id(User) -> 
+  F = fun() -> mnesia:read(session_resume_id, User) end,
+  case mnesia:transaction(F) of 
+    {atomic, [#session_resume_id{resume_id = ResumeId}]}
+     ->
+      {ok, ResumeId};
+    _ ->
+      error
+  end.

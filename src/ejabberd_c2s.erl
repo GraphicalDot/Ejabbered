@@ -68,6 +68,9 @@
 
 -include("jlib.hrl").
 
+
+
+-include("session_resume_id.hrl").
 -include("mod_privacy.hrl").
 
 -define(SETS, gb_sets).
@@ -1045,69 +1048,68 @@ wait_for_bind({xmlstreamelement, #xmlel{name = Name, attrs = Attrs} = El},
     end;
 
 wait_for_bind({xmlstreamelement, El}, StateData) ->
-    ?INFO_MSG("~n ~n ~n CHECKING SAVED ID ~n ~n ~n ", []),
-	case has_saved_prev_id of
-	{true, PrevID} -> 
-	    ?INFO_MSG("~n ~n ~n ID FOUND ~n ~n ~n ", []),
-		case handle_resume_without_attribute(StateData, PrevID) of
-	    	{ok, ResumedState} ->
-				fsm_next_state(session_established, ResumedState);
-	    	error ->
-				fsm_next_state(wait_for_bind, StateData)
-	  	end;
+	ResumeResult = case get_saved_prev_id(StateData#state.user) of
+	{ok, PrevID} -> 
+		handle_resume_without_attribute(StateData, PrevID);
 	_ ->
-	    ?INFO_MSG("~n ~n ~n NO ID FOUND
-	     ~n ~n ~n ", []),
-	    case jlib:iq_query_info(El) of
-	      #iq{type = set, xmlns = ?NS_BIND, sub_el = SubEl} =
-		  IQ ->
-		  U = StateData#state.user,
-		  R1 = xml:get_path_s(SubEl,
-				      [{elem, <<"resource">>}, cdata]),
-		  R = case jlib:resourceprep(R1) of
-			error -> error;
-			<<"">> ->
-	                      iolist_to_binary([randoms:get_string()
-	                                        | [jlib:integer_to_binary(X)
-	                                           || X <- tuple_to_list(now())]]);
-			Resource -> Resource
-		      end,
-		  case R of
-		    error ->
-			Err = jlib:make_error_reply(El, ?ERR_BAD_REQUEST),
-			send_element(StateData, Err),
-			fsm_next_state(wait_for_bind, StateData);
-		    _ ->
-			case resource_conflict_action(U, StateData#state.server,
-						      R)
-			    of
-			  closenew ->
-			      Err = jlib:make_error_reply(El,
-							  ?STANZA_ERROR(<<"409">>,
-									<<"modify">>,
-									<<"conflict">>)),
-			      send_element(StateData, Err),
-			      fsm_next_state(wait_for_bind, StateData);
-			  {accept_resource, R2} ->
-			      JID = jlib:make_jid(U, StateData#state.server, R2),
-			      Res = IQ#iq{type = result,
-					  sub_el =
-					      [#xmlel{name = <<"bind">>,
-						      attrs = [{<<"xmlns">>, ?NS_BIND}],
-						      children =
-							  [#xmlel{name = <<"jid">>,
-								  attrs = [],
-								  children =
-								      [{xmlcdata,
-									jlib:jid_to_string(JID)}]}]}]},
-			      send_element(StateData, jlib:iq_to_xml(Res)),
-			      fsm_next_state(wait_for_session,
-					     StateData#state{resource = R2, jid = JID})
-			end
-		  end;
-	      _ -> fsm_next_state(wait_for_bind, StateData)
-	    end
-	end;
+		error
+	end,
+	case ResumeResult of 
+		{ok, ResumedState} ->
+			fsm_next_state(session_established, ResumedState);
+		error ->
+		    ?INFO_MSG("~n ~n ~n NO ID FOUND
+		     ~n ~n ~n ", []),
+		    case jlib:iq_query_info(El) of
+		      #iq{type = set, xmlns = ?NS_BIND, sub_el = SubEl} =
+			  IQ ->
+			  U = StateData#state.user,
+			  R1 = xml:get_path_s(SubEl,
+					      [{elem, <<"resource">>}, cdata]),
+			  R = case jlib:resourceprep(R1) of
+				error -> error;
+				<<"">> ->
+		                      iolist_to_binary([randoms:get_string()
+		                                        | [jlib:integer_to_binary(X)
+		                                           || X <- tuple_to_list(now())]]);
+				Resource -> Resource
+			      end,
+			  case R of
+			    error ->
+				Err = jlib:make_error_reply(El, ?ERR_BAD_REQUEST),
+				send_element(StateData, Err),
+				fsm_next_state(wait_for_bind, StateData);
+			    _ ->
+				case resource_conflict_action(U, StateData#state.server,
+							      R)
+				    of
+				  closenew ->
+				      Err = jlib:make_error_reply(El,
+								  ?STANZA_ERROR(<<"409">>,
+										<<"modify">>,
+										<<"conflict">>)),
+				      send_element(StateData, Err),
+				      fsm_next_state(wait_for_bind, StateData);
+				  {accept_resource, R2} ->
+				      JID = jlib:make_jid(U, StateData#state.server, R2),
+				      Res = IQ#iq{type = result,
+						  sub_el =
+						      [#xmlel{name = <<"bind">>,
+							      attrs = [{<<"xmlns">>, ?NS_BIND}],
+							      children =
+								  [#xmlel{name = <<"jid">>,
+									  attrs = [],
+									  children =
+									      [{xmlcdata,
+										jlib:jid_to_string(JID)}]}]}]},
+				      send_element(StateData, jlib:iq_to_xml(Res)),
+				      fsm_next_state(wait_for_session,
+						     StateData#state{resource = R2, jid = JID})
+				end
+			  end;
+		      _ -> fsm_next_state(wait_for_bind, StateData)
+		    end
+		end;
 wait_for_bind(timeout, StateData) ->
     {stop, normal, StateData};
 wait_for_bind({xmlstreamend, _Name}, StateData) ->
@@ -2757,7 +2759,7 @@ handle_a(StateData, Attrs) ->
     end.
 
 handle_resume_without_attribute(StateData, PrevID) ->
-    R = case inherit_session_state(StateData, PrevID) of
+    R = case inherit_session_state_on_client_kill(StateData, PrevID) of
 			    {ok, InheritedState} ->
 				{ok, InheritedState};
 			    {error, Err} ->
@@ -2790,11 +2792,8 @@ handle_resume_without_attribute(StateData, PrevID) ->
 	  ?INFO_MSG("Resumed session for ~s",
 		    [jlib:jid_to_string(NewStateData#state.jid)]),
 	  {ok, NewStateData};
-      {error, El, Msg} ->
-	  send_element(StateData, El),
-	  ?INFO_MSG("Cannot resume session for ~s@~s: ~s",
-		    [StateData#state.user, StateData#state.server, Msg]),
-	  error
+      _ ->
+		  error
     end.
 
 handle_resume(StateData, Attrs) ->
@@ -3066,6 +3065,55 @@ inherit_session_state(#state{user = U, server = S} = StateData, ResumeID) ->
 	  {error, <<"Invalid 'previd' value">>}
     end.
 
+inherit_session_state_on_client_kill(#state{user = U, server = S} = StateData, ResumeID) ->
+    case jlib:base64_to_term(ResumeID) of
+      {term, {R, Time}} ->
+	  case ejabberd_sm:get_session_pid(U, S, R) of
+	    none ->
+		{error, <<"Previous session PID not found">>};
+	    OldPID ->
+		OldSID = {Time, OldPID},
+		case catch resume_session(OldSID) of
+		  {ok, OldStateData} ->
+		      NewSID = {Time, self()}, % Old time, new PID
+		      Priority = case OldStateData#state.pres_last of
+				   undefined ->
+				       0;
+				   Presence ->
+				       get_priority_from_presence(Presence)
+				 end,
+		      Conn = get_conn_type(StateData),
+		      Info = [{ip, StateData#state.ip}, {conn, Conn},
+			      {auth_module, StateData#state.auth_module}],
+		      ejabberd_sm:open_session(NewSID, U, S, R,
+					       Priority, Info),
+		      {ok, StateData#state{conn = Conn,
+					   sid = NewSID,
+					   jid = OldStateData#state.jid,
+					   resource = OldStateData#state.resource,
+					   pres_t = OldStateData#state.pres_t,
+					   pres_f = OldStateData#state.pres_f,
+					   pres_a = OldStateData#state.pres_a,
+					   pres_last = OldStateData#state.pres_last,
+					   pres_timestamp = OldStateData#state.pres_timestamp,
+					   privacy_list = OldStateData#state.privacy_list,
+					   aux_fields = OldStateData#state.aux_fields,
+					   csi_state = OldStateData#state.csi_state,
+					   csi_queue = OldStateData#state.csi_queue,
+					   mgmt_xmlns = OldStateData#state.mgmt_xmlns,
+					   mgmt_queue = OldStateData#state.mgmt_queue,
+					   mgmt_timeout = OldStateData#state.mgmt_timeout,
+					   mgmt_state = active}};
+		  {error, Msg} ->
+		      {error, Msg};
+		  _ ->
+		      {error, <<"Cannot grab session state">>}
+		end
+	  end;
+      _ ->
+	  {error, <<"Invalid 'previd' value">>}
+    end.
+
 resume_session({Time, PID}) ->
     (?GEN_FSM):sync_send_all_state_event(PID, {resume_session, Time}, 5000).
 
@@ -3196,28 +3244,14 @@ opt_type(resource_conflict) ->
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
 
-has_saved_prev_id(User, Server) ->
-    ?INFO_MSG("~n ~n ~n CHECKING SAVED ID ~n ~n ~n ", []),
-    case ejabberd_odbc:sql_query(
-           Server,
-           [<<"select resume_id from users " >>, 
-           		<<" where username  = ">>,
-           		<<"'">>, User, <<"';">>]) of
-
-        {selected, [_] , [[PrevID]]} -> 
-		    ?INFO_MSG("~n ~n ~n FOUND ~p ~n ~n ~n ", [PrevID]),
-        	{true, PrevID};
-        SomethingElse ->
-	    ?INFO_MSG("~n ~n ~n FOUND ~p ~n ~n ~n ", [SomethingElse]),
-        	false
-    end.	
+get_saved_prev_id(User) ->
+	Result = ejabberd_sm:get_session_resume_id(User),
+	Result.
 
 store_resume_id(StateData, ResumeId) ->
     ?INFO_MSG("~n ~n ~n STORING ID with ~p ~n ~p ~n ~n ~n ", [StateData, ResumeId]),
-	LServer = StateData#state.server,
 	Username = StateData#state.user,
-	ejabberd_odbc:sql_query(LServer,[<<"update users set resume_id = ">>,
-    								<<"'">>, ResumeId, <<"'">>,
-    								<<" where username='">>,
-    								Username, <<"';">>]),
-	ok.
+	UserSessionInfo = #session_resume_id{user = StateData#state.user, resume_id = ResumeId},
+	F = fun() -> mnesia:write(UserSessionInfo) end,
+	mnesia:transaction(F).
+
