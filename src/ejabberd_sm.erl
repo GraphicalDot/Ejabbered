@@ -63,7 +63,8 @@
 	 get_user_ip/3,
 	 get_max_user_sessions/2,
 	 get_all_pids/0,
-	 is_existing_resource/3
+	 is_existing_resource/3, 
+     get_session_resume_id/1
 	]).
 
 -export([init/1, handle_call/3, handle_cast/2,
@@ -258,9 +259,20 @@ get_session_pid(User, Server, Resource) ->
     LResource = jlib:resourceprep(Resource),
     Mod = get_sm_backend(),
     case Mod:get_sessions(LUser, LServer, LResource) of
-	[#session{sid = {_, Pid}}] -> Pid;
-	_ -> none
+    [#session{sid = {_, Pid}}] -> Pid;
+    _ -> none
     end.
+
+-spec get_session_pid(binary(), binary()) -> none | pid().
+get_session_pid(User, Server) ->
+    LUser = jlib:nodeprep(User),
+    LServer = jlib:nameprep(Server),
+    Mod = get_sm_backend(),
+    case Mod:get_sessions(LUser, LServer) of
+    [#session{sid = {_, Pid}}] -> Pid;
+    _ -> none
+    end.
+
 
 -spec dirty_get_sessions_list() -> [ljid()].
 
@@ -814,3 +826,8 @@ opt_type(sm_db_type) ->
 	(redis) -> redis
     end;
 opt_type(_) -> [sm_db_type].
+
+
+get_session_resume_id(User) -> 
+    Mod = get_sm_backend(),
+    Mod:get_session_resume_id(User).
