@@ -1048,7 +1048,7 @@ wait_for_bind({xmlstreamelement, #xmlel{name = Name, attrs = Attrs} = El},
     end;
 
 wait_for_bind({xmlstreamelement, El}, StateData) ->
-	ResumeResult = case get_saved_prev_id(StateData#state.user) of
+	ResumeResult = case get_resume_id(StateData#state.user) of
 	{ok, PrevID} -> 
 		handle_resume_without_attribute(StateData, PrevID);
 	_ ->
@@ -1057,7 +1057,7 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 	case ResumeResult of 
 		{ok, ResumedState} ->
 			fsm_next_state(session_established, ResumedState);
-		error ->
+		_ ->
 		    ?INFO_MSG("~n ~n ~n NO ID FOUND
 		     ~n ~n ~n ", []),
 		    case jlib:iq_query_info(El) of
@@ -1103,6 +1103,7 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 									      [{xmlcdata,
 										jlib:jid_to_string(JID)}]}]}]},
 				      send_element(StateData, jlib:iq_to_xml(Res)),
+					  StreamStateData = handle_automatic_enable(StateData#state{resource = R2, jid = JID}),
 				      fsm_next_state(wait_for_session,
 						     StateData#state{resource = R2, jid = JID})
 				end
@@ -2739,6 +2740,14 @@ handle_enable(#state{mgmt_timeout = ConfigTimeout} = StateData, Attrs) ->
 		    mgmt_queue = queue:new(),
 		    mgmt_timeout = Timeout * 1000}.
 
+
+handle_automatic_enable(#state{mgmt_timeout = ConfigTimeout} = StateData) ->
+    Timeout = ConfigTimeout,
+	make_resume_id(StateData),
+    StateData#state{mgmt_state = active,
+		    mgmt_queue = queue:new(),
+		    mgmt_timeout = Timeout * 1000}.
+
 handle_r(StateData) ->
     H = jlib:integer_to_binary(StateData#state.mgmt_stanzas_in),
     Res = #xmlel{name = <<"a">>,
@@ -2772,21 +2781,15 @@ handle_resume_without_attribute(StateData, PrevID) ->
 	  AttrXmlns = NewState#state.mgmt_xmlns,
 	  AttrId = make_resume_id(NewState),
 	  AttrH = jlib:integer_to_binary(NewState#state.mgmt_stanzas_in),
-	  send_element(NewState,
-		       #xmlel{name = <<"resumed">>,
-			      attrs = [{<<"xmlns">>, AttrXmlns},
-				       {<<"h">>, AttrH},
-				       {<<"previd">>, AttrId}],
-			      children = []}),
 	  SendFun = fun(_F, _T, El, Time) ->
 			    NewEl = add_resent_delay_info(NewState, El, Time),
 			    send_element(NewState, NewEl)
 		    end,
 	  handle_unacked_stanzas(NewState, SendFun),
-	  send_element(NewState,
-		       #xmlel{name = <<"r">>,
-			      attrs = [{<<"xmlns">>, AttrXmlns}],
-			      children = []}),
+	  % send_element(NewState,
+		 %       #xmlel{name = <<"r">>,
+			%       attrs = [{<<"xmlns">>, AttrXmlns}],
+			%       children = []}),
 	  FlushedState = csi_queue_flush(NewState),
 	  NewStateData = FlushedState#state{csi_state = active},
 	  ?INFO_MSG("Resumed session for ~s",
@@ -3120,7 +3123,7 @@ resume_session({Time, PID}) ->
 make_resume_id(StateData) ->
     {Time, _} = StateData#state.sid,
     ResumeId = jlib:term_to_base64({StateData#state.resource, Time}),
-    store_resume_id(StateData, ResumeId),
+    save_resume_id(StateData, ResumeId),
     ResumeId.
 
 add_resent_delay_info(#state{server = From}, El, Time) ->
@@ -3244,11 +3247,11 @@ opt_type(resource_conflict) ->
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
 
-get_saved_prev_id(User) ->
+get_resume_id(User) ->
 	Result = ejabberd_sm:get_session_resume_id(User),
 	Result.
 
-store_resume_id(StateData, ResumeId) ->
+save_resume_id(StateData, ResumeId) ->
     ?INFO_MSG("~n ~n ~n STORING ID with ~p ~n ~p ~n ~n ~n ", [StateData, ResumeId]),
 	Username = StateData#state.user,
 	UserSessionInfo = #session_resume_id{user = StateData#state.user, resume_id = ResumeId},
