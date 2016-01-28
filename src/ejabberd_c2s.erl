@@ -1058,58 +1058,28 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 		{ok, ResumedState} ->
 			fsm_next_state(session_established, ResumedState);
 		_ ->
-		    ?INFO_MSG("~n ~n ~n NO ID FOUND
-		     ~n ~n ~n ", []),
 		    case jlib:iq_query_info(El) of
-		      #iq{type = set, xmlns = ?NS_BIND, sub_el = SubEl} =
-			  IQ ->
-			  U = StateData#state.user,
-			  R1 = xml:get_path_s(SubEl,
-					      [{elem, <<"resource">>}, cdata]),
-			  R = case jlib:resourceprep(R1) of
-				error -> error;
-				<<"">> ->
-		                      iolist_to_binary([randoms:get_string()
-		                                        | [jlib:integer_to_binary(X)
-		                                           || X <- tuple_to_list(now())]]);
-				Resource -> Resource
-			      end,
-			  case R of
-			    error ->
-				Err = jlib:make_error_reply(El, ?ERR_BAD_REQUEST),
-				send_element(StateData, Err),
-				fsm_next_state(wait_for_bind, StateData);
-			    _ ->
-				case resource_conflict_action(U, StateData#state.server,
-							      R)
-				    of
-				  closenew ->
-				      Err = jlib:make_error_reply(El,
-								  ?STANZA_ERROR(<<"409">>,
-										<<"modify">>,
-										<<"conflict">>)),
-				      send_element(StateData, Err),
-				      fsm_next_state(wait_for_bind, StateData);
-				  {accept_resource, R2} ->
-				      JID = jlib:make_jid(U, StateData#state.server, R2),
-				      Res = IQ#iq{type = result,
-						  sub_el =
-						      [#xmlel{name = <<"bind">>,
-							      attrs = [{<<"xmlns">>, ?NS_BIND}],
-							      children =
-								  [#xmlel{name = <<"jid">>,
-									  attrs = [],
-									  children =
-									      [{xmlcdata,
+		      	#iq{type = set, xmlns = ?NS_BIND, sub_el = SubEl} = IQ ->
+					U = StateData#state.user,
+					R1 = xml:get_path_s(SubEl,[{elem, <<"resource">>}, cdata]),
+					R = case jlib:resourceprep(R1),
+				    JID = jlib:make_jid(U, StateData#state.server, R2),
+				    Res = IQ#iq{type = result,
+						sub_el =
+						    [#xmlel{name = <<"bind">>,
+							    attrs = [{<<"xmlns">>, ?NS_BIND}],
+							    children =
+								[#xmlel{name = <<"jid">>,
+									attrs = [],
+									children =
+									[{xmlcdata,
 										jlib:jid_to_string(JID)}]}]}]},
-				      send_element(StateData, jlib:iq_to_xml(Res)),
-					  StreamStateData = handle_automatic_enable(StateData#state{resource = R2, jid = JID}),
-				      fsm_next_state(wait_for_session,
-						     StateData#state{resource = R2, jid = JID})
-				end
-			  end;
-		      _ -> fsm_next_state(wait_for_bind, StateData)
-		    end
+				    send_element(StateData, jlib:iq_to_xml(Res)),
+					StreamStateData = handle_automatic_enable(StateData#state{resource = R2, jid = JID}),
+				    fsm_next_state(wait_for_session, StateData#state{resource = R2, jid = JID});
+				_ ->
+					fsm_next_state(wait_for_bind, StateData)
+			end
 		end;
 wait_for_bind(timeout, StateData) ->
     {stop, normal, StateData};
