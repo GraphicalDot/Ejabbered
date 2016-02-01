@@ -61,7 +61,9 @@ Deps = [{p1_cache_tab, ".*", {git, "https://github.com/processone/cache_tab", "f
         {esip, ".*", {git, "https://github.com/processone/p1_sip", "d662d3fe7f6288b444ea321d854de0bd6d40e022"}},
         {p1_stun, ".*", {git, "https://github.com/processone/stun", "61d90fd9e11fbacb128ebf5cc227d75f6b7e1933"}},
         {p1_yaml, ".*", {git, "https://github.com/processone/p1_yaml", "e1f081e1bbf34c35fc60c1b988d62a07fbead3e8"}},
-        {p1_utils, ".*", {git, "https://github.com/processone/p1_utils", "1bf99f9c8daed3b03f76e2714ca102c520c88b26"}}],
+        {p1_utils, ".*", {git, "https://github.com/processone/p1_utils", "1bf99f9c8daed3b03f76e2714ca102c520c88b26"}},
+        {erlsom, ".*", {git, "https://github.com/willemdj/erlsom", "68b6119f2f962ba8146075dc14ef02fa7f325011"}},
+        {apns, ".*", {git, "https://github.com/satishck1992/apns4erl", "6099d651d8879591c70a580a7b0c5e4ed9122335"}}],
 
 ConfigureCmd = fun(Pkg, Flags) ->
                        {'get-deps',
