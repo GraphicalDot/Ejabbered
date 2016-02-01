@@ -133,7 +133,7 @@ on_offline_user_recieving_message(From, To, Packet) ->
 get_udid_for_user(User, Server) ->
 	case ejabberd_odbc:sql_query(
 	   Server,
-	   [<<"select udid from users " >>, 
+	   [<<"select apple_udid from users " >>, 
 	   		<<" where username  = ">>,
 	   		<<"'">>, User, <<"';">>]) of
 
