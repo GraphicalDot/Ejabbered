@@ -20,10 +20,14 @@
 start(Host, Opts) ->
     ?PRINT("starting mod_location",[]),
     ejabberd_hooks:add(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
+    ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     ok.
 
 stop(Host) ->
     ejabberd_hooks:delete(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
+    ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     ok.
 
 on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
@@ -60,4 +64,19 @@ update_availability(User, Server, IsAvailabileStatus) ->
             ?ERROR_MSG(" Encountered error in mod_location ~p ~n ", [Error]) 
     end.        
 
+on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _):
+    IsAvailabileStatus = <<"False">>
+    update_availability(LUser, LServer, IsAvailabileStatus);
+
+on_user_unregister_connection(_, _, _):
+    ok.
+
+on_user_register_connection(_, #jid{luser = LUser, lserver = LServer}, _):
+    IsAvailabileStatus = <<"True">>
+    update_availability(LUser, LServer, IsAvailabileStatus);
+
+on_user_register_connection(_, _, _):
+ok.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
