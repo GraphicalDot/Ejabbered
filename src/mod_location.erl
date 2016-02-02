@@ -7,7 +7,11 @@
 
 %% public methods for this module
 -export([start/2, stop/1]).
--export([on_user_presence_update/3, code_change/3]).
+-export([on_user_presence_update/3, 
+        code_change/3, 
+        on_user_unregister_connection/3,
+        on_user_register_connection/3
+]).
 
 %% included for writing to ejabberd log file
 -include("ejabberd.hrl").
@@ -16,6 +20,10 @@
 %% ejabberd functions for JID manipulation called jlib.
 -include("jlib.hrl").
 %%add and remove hook module on startup and close
+
+%%==================================================
+%% gen server callbacks
+%%==================================================
 
 start(Host, Opts) ->
     ?PRINT("starting mod_location",[]),
@@ -30,24 +38,50 @@ stop(Host) ->
     ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     ok.
 
-on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
-    Status =  case xml:get_subtag_cdata(Packet, <<"status">>) of
-        <<"Offline">> ->
-            {ok, <<"False">>};
-        <<"Online">> ->
-            {ok, <<"True">>};
-        _ ->  ok
-    end,
+%%==================================================
+%% callbacks
+%%==================================================
 
-    case Status of
-        {ok, IsAvailabileStatus} -> 
-            update_availability(User, Server, IsAvailabileStatus);
-        _ -> 
-            ok
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
+
+on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
+    case xml:get_subtag_cdata(Packet, <<"status">>) of
+        <<"Offline">> ->
+            set_unavailable(User, Server);
+        <<"Online">> ->
+            set_available(User, Server);
+        _ ->  ok
     end,
     Packet;
 
-on_user_presence_update(Packet, User, Server) -> Packet.
+on_user_presence_update(Packet, User, Server) -> 
+    Packet.
+
+on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
+    set_unavailable(LUser, LServer);
+
+on_user_unregister_connection(_, _, _) ->
+    ok.
+
+on_user_register_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
+    set_available(LUser, LServer);
+
+on_user_register_connection(_, _, _) ->
+    ok.
+
+%%==================================================
+%% internal functions
+%%==================================================
+
+set_available(User, Server) -> 
+    IsAvailabileStatus = <<"True">>,
+    update_availability(User, Server, IsAvailabileStatus).
+
+set_unavailable(User, Server) ->
+    IsAvailabileStatus = <<"False">>,
+    update_availability(User, Server, IsAvailabileStatus).
+
 
 update_availability(User, Server, IsAvailabileStatus) ->
     case ejabberd_odbc:sql_query(
@@ -64,19 +98,4 @@ update_availability(User, Server, IsAvailabileStatus) ->
             ?ERROR_MSG(" Encountered error in mod_location ~p ~n ", [Error]) 
     end.        
 
-on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _):
-    IsAvailabileStatus = <<"False">>
-    update_availability(LUser, LServer, IsAvailabileStatus);
-
-on_user_unregister_connection(_, _, _):
-    ok.
-
-on_user_register_connection(_, #jid{luser = LUser, lserver = LServer}, _):
-    IsAvailabileStatus = <<"True">>
-    update_availability(LUser, LServer, IsAvailabileStatus);
-
-on_user_register_connection(_, _, _):
-ok.
-
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
