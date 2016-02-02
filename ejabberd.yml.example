@@ -582,6 +582,7 @@ modules:
     queue_presence: false
   mod_configure: {} # requires mod_adhoc
   mod_disco: {}
+  mod_location: {}
   ## mod_echo: {}
   mod_irc: {}
   mod_http_bind: {}
