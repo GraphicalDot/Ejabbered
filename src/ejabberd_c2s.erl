@@ -54,7 +54,9 @@
 	 send_filtered/5,
 	 broadcast/4,
 	 get_subscribed/1,
-         transform_listen_option/2]).
+     transform_listen_option/2,
+     set_unavailable/1
+]).
 
 -export([init/1, wait_for_stream/2, wait_for_auth/2,
 	 wait_for_feature_request/2, wait_for_bind/2,
@@ -68,52 +70,7 @@
 
 -include("jlib.hrl").
 
--include("mod_privacy.hrl").
-
--define(SETS, gb_sets).
--define(DICT, dict).
-
-%% pres_a contains all the presence available send (either through roster mechanism or directed).
-%% Directed presence unavailable remove user from pres_a.
--record(state, {socket,
-		sockmod,
-		socket_monitor,
-		xml_socket,
-		streamid,
-		sasl_state,
-		access,
-		shaper,
-		zlib = false,
-		tls = false,
-		tls_required = false,
-		tls_enabled = false,
-		tls_options = [],
-		authenticated = false,
-		jid,
-		user = <<"">>, server = <<"">>, resource = <<"">>,
-		sid,
-		pres_t = ?SETS:new(),
-		pres_f = ?SETS:new(),
-		pres_a = ?SETS:new(),
-		pres_last,
-		pres_timestamp,
-		privacy_list = #userlist{},
-		conn = unknown,
-		auth_module = unknown,
-		ip,
-		aux_fields = [],
-		csi_state = active,
-		csi_queue = [],
-		mgmt_state,
-		mgmt_xmlns,
-		mgmt_queue,
-		mgmt_max_queue,
-		mgmt_pending_since,
-		mgmt_timeout,
-		mgmt_resend,
-		mgmt_stanzas_in = 0,
-		mgmt_stanzas_out = 0,
-		lang = <<"">>}).
+-include("ejabberd_c2s.hrl").
 
 %-define(DBGFSM, true).
 
@@ -198,6 +155,10 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
+
+set_unavailable(FsmRef) ->
+	(?GEN_FSM):send_all_state_event(FsmRef, set_unavailable).
+
 start(SockData, Opts) ->
     ?SUPERVISOR_START.
 
@@ -331,7 +292,7 @@ init([{SockMod, Socket}, Opts]) ->
 		       xml_socket = XMLSocket, zlib = Zlib, tls = TLS,
 		       tls_required = StartTLSRequired,
 		       tls_enabled = TLSEnabled, tls_options = TLSOpts,
-		       sid = {now(), self()}, streamid = new_id(),
+		       sid = {erlang:timestamp(), self()}, streamid = new_id(),
 		       access = Access, shaper = Shaper, ip = IP,
 		       mgmt_state = StreamMgmtState,
 		       mgmt_max_queue = MaxAckQueue,
@@ -1025,7 +986,7 @@ resource_conflict_action(U, S, R) ->
       setresource ->
 	  Rnew = iolist_to_binary([randoms:get_string()
                                    | [jlib:integer_to_binary(X)
-                                      || X <- tuple_to_list(now())]]),
+                                      || X <- tuple_to_list(erlang:timestamp())]]),
 	  {accept_resource, Rnew}
     end.
 
@@ -1055,7 +1016,7 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 		<<"">> ->
                       iolist_to_binary([randoms:get_string()
                                         | [jlib:integer_to_binary(X)
-                                           || X <- tuple_to_list(now())]]);
+                                           || X <- tuple_to_list(erlang:timestamp())]]);
 		Resource -> Resource
 	      end,
 	  case R of
@@ -1304,7 +1265,8 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-    fsm_next_state(session_established, NewState).
+	UpdatedAvailabilityState = NewState#state{is_available = true},
+    fsm_next_state(session_established, UpdatedAvailabilityState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
     session_established(Event, StateData),
@@ -1336,6 +1298,25 @@ wait_for_resume(Event, StateData) ->
 %%          {next_state, NextStateName, NextStateData, Timeout} |
 %%          {stop, Reason, NewStateData}
 %%----------------------------------------------------------------------
+
+handle_event(set_unavailable, StateName, StateData) -> 
+	PresencePacket = #xmlel{
+		name = <<"presence">>,
+		attrs = [{<<"type">>, <<"unavailable">>}],
+		children = [
+			#xmlel{
+				name = <<"status">>,
+				children = [{xmlcdata, <<"Offline">>}]
+				}
+		]
+	},
+	From = StateData#state.jid,
+	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
+	NewState = StateData#state{is_available = false},
+	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData]),
+	fsm_next_state(session_established, NewState);
+
+
 handle_event(_Event, StateName, StateData) ->
     fsm_next_state(StateName, StateData).
 
@@ -2100,7 +2081,7 @@ presence_update(From, Packet, StateData) ->
 	  FromUnavail = (StateData#state.pres_last == undefined),
 	  ?DEBUG("from unavail = ~p~n", [FromUnavail]),
 	  NewStateData = StateData#state{pres_last = Packet,
-					 pres_timestamp = now()},
+					 pres_timestamp = erlang:timestamp()},
 	  NewState = if FromUnavail ->
 			    ejabberd_hooks:run(user_available_hook,
 					       NewStateData#state.server,
@@ -2843,7 +2824,7 @@ mgmt_queue_add(StateData, El) ->
 	       Num ->
 		   Num + 1
 	     end,
-    NewQueue = queue:in({NewNum, now(), El}, StateData#state.mgmt_queue),
+    NewQueue = queue:in({NewNum, erlang:timestamp(), El}, StateData#state.mgmt_queue),
     NewState = StateData#state{mgmt_queue = NewQueue,
 			       mgmt_stanzas_out = NewNum},
     check_queue_length(NewState).
@@ -3047,7 +3028,7 @@ csi_queue_add(#state{csi_queue = Queue} = StateData, Stanza) ->
       true -> csi_queue_add(csi_queue_flush(StateData), Stanza);
       false ->
 	  From = xml:get_tag_attr_s(<<"from">>, Stanza),
-	  NewQueue = lists:keystore(From, 1, Queue, {From, now(), Stanza}),
+	  NewQueue = lists:keystore(From, 1, Queue, {From, erlang:timestamp(), Stanza}),
 	  StateData#state{csi_queue = NewQueue}
     end.
 
