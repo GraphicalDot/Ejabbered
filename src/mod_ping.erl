@@ -158,7 +158,7 @@ handle_cast({iq_pong, JID, timeout}, State) ->
 		       [JID]),
     #jid{user = User, server = Server, resource = Resource} = JID,
 	case ejabberd_sm:get_session_pid(User, Server, Resource) of
-	    Pid when is_pid(Pid) -> ejabberd_c2s:set_offline(Pid);
+	    Pid when is_pid(Pid) -> ejabberd_c2s:set_unavailable(Pid);
 	    _ -> ok
 	end,
     {noreply, State#state{timers = Timers}};
