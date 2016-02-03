@@ -113,7 +113,9 @@
 		mgmt_resend,
 		mgmt_stanzas_in = 0,
 		mgmt_stanzas_out = 0,
-		lang = <<"">>}).
+		lang = <<"">>,
+		is_available = true
+}).
 
 %-define(DBGFSM, true).
 
@@ -198,6 +200,10 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
+
+set_offline(FsmRef) ->
+	(?GEN_FSM):send_all_state_event(FsmRef, set_offline).
+
 start(SockData, Opts) ->
     ?SUPERVISOR_START.
 
@@ -1304,7 +1310,8 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-    fsm_next_state(session_established, NewState).
+	UpdatedAvailabilityState = NewState#state{is_available = true}
+    fsm_next_state(session_established, UpdatedAvailabilityState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
     session_established(Event, StateData),
@@ -1336,6 +1343,23 @@ wait_for_resume(Event, StateData) ->
 %%          {next_state, NextStateName, NextStateData, Timeout} |
 %%          {stop, Reason, NewStateData}
 %%----------------------------------------------------------------------
+
+handle_event(set_offline, StateData) -> 
+	PresencePacket = #xmlel{
+		name = <<"presence">>,
+		attrs = [{<<"type">>, <<"unavailable">>}],
+		children = [
+			#xmlel{
+				name = <<"status">>,
+				children = [{xmlcdata, <<"Offline">>}]
+				}
+		]
+	},
+	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
+	NewState = StateData#state{is_available = false}
+	fsm_next_state(session_established, NewState).
+
+
 handle_event(_Event, StateName, StateData) ->
     fsm_next_state(StateName, StateData).
 

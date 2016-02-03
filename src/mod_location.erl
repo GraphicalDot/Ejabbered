@@ -28,12 +28,14 @@
 start(Host, Opts) ->
     ?PRINT("starting mod_location",[]),
     ejabberd_hooks:add(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:add(user_send_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     ok.
 
 stop(Host) ->
     ejabberd_hooks:delete(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:delete(user_send_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     ok.
@@ -44,6 +46,15 @@ stop(Host) ->
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+
+on_user_send_packet(Packet, C2SState, From, To) -> 
+    case C2SState#state.is_available of
+        false -> 
+            set_available(C2SState#state.user, C2SState#state.server);
+        _ ->
+            ok
+    end,
+    Packet.
 
 on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
     case xml:get_subtag_cdata(Packet, <<"status">>) of
@@ -97,5 +108,3 @@ update_availability(User, Server, IsAvailabileStatus) ->
         Error -> 
             ?ERROR_MSG(" Encountered error in mod_location ~p ~n ", [Error]) 
     end.        
-
-
