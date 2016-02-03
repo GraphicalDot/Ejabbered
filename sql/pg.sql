@@ -25,7 +25,8 @@ CREATE TABLE users (
     fb_id bigint,
     fb_name text,
     last_seen text,
-    resume_id text
+    resume_id text,
+    is_available boolean
 );
 
 -- To support SCRAM auth:
