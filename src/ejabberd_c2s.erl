@@ -1188,6 +1188,16 @@ session_established(closed, StateData) ->
 %% Process packets sent by user (coming from user on c2s XMPP
 %% connection)
 session_established2(El, StateData) ->
+    case StateData#state.is_available of
+    	false -> 
+		    ejabberd_hooks:run(
+		    	user_started_sending_packet,
+		    	StateData#state.server,
+		    	[StateData#state.user, StateData#state.server]
+		    );
+		_ ->
+			ok
+	end,
     #xmlel{name = Name, attrs = Attrs} = El,
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
@@ -1313,7 +1323,7 @@ handle_event(set_unavailable, StateName, StateData) ->
 	From = StateData#state.jid,
 	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
 	NewState = StateData#state{is_available = false},
-	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData]),
+	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.user, StateData#state.server]),
 	fsm_next_state(session_established, NewState);
 
 
