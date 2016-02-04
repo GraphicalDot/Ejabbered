@@ -40,9 +40,9 @@
 
 -define(SUPERVISOR, ejabberd_sup).
 
--define(DEFAULT_SEND_PINGS, false).
+-define(DEFAULT_SEND_PINGS, true).
 
--define(DEFAULT_PING_INTERVAL, 60).
+-define(DEFAULT_PING_INTERVAL, 20).
 
 -define(DICT, dict).
 
@@ -63,7 +63,6 @@
 	{host = <<"">>,
          send_pings = ?DEFAULT_SEND_PINGS :: boolean(),
 	 ping_interval = ?DEFAULT_PING_INTERVAL :: non_neg_integer(),
-	 timeout_action = none :: none | kill,
          timers = (?DICT):new() :: ?TDICT}).
 
 %%====================================================================
@@ -106,10 +105,6 @@ init([Host, Opts]) ->
     PingInterval = gen_mod:get_opt(ping_interval, Opts,
                                    fun(I) when is_integer(I), I>0 -> I end,
 				   ?DEFAULT_PING_INTERVAL),
-    TimeoutAction = gen_mod:get_opt(timeout_action, Opts,
-                                    fun(none) -> none;
-                                       (kill) -> kill
-                                    end, none),
     IQDisc = gen_mod:get_opt(iqdisc, Opts, fun gen_iq_handler:check_type/1,
                              no_queue),
     mod_disco:register_feature(Host, ?NS_PING),
@@ -130,7 +125,6 @@ init([Host, Opts]) ->
     {ok,
      #state{host = Host, send_pings = SendPings,
 	    ping_interval = PingInterval,
-	    timeout_action = TimeoutAction,
 	    timers = (?DICT):new()}}.
 
 terminate(_Reason, #state{host = Host}) ->
@@ -162,19 +156,13 @@ handle_cast({iq_pong, JID, timeout}, State) ->
     Timers = del_timer(JID, State#state.timers),
     ejabberd_hooks:run(user_ping_timeout, State#state.host,
 		       [JID]),
-    case State#state.timeout_action of
-      kill ->
-	  #jid{user = User, server = Server,
-	       resource = Resource} =
-	      JID,
-	  case ejabberd_sm:get_session_pid(User, Server, Resource)
-	      of
-	    Pid when is_pid(Pid) -> ejabberd_c2s:stop(Pid);
+    #jid{user = User, server = Server, resource = Resource} = JID,
+	case ejabberd_sm:get_session_pid(User, Server, Resource) of
+	    Pid when is_pid(Pid) -> ejabberd_c2s:set_unavailable(Pid);
 	    _ -> ok
-	  end;
-      _ -> ok
-    end,
+	end,
     {noreply, State#state{timers = Timers}};
+
 handle_cast(_Msg, State) -> {noreply, State}.
 
 handle_info({timeout, _TRef, {ping, JID}}, State) ->
@@ -252,9 +240,5 @@ mod_opt_type(ping_interval) ->
     fun (I) when is_integer(I), I > 0 -> I end;
 mod_opt_type(send_pings) ->
     fun (B) when is_boolean(B) -> B end;
-mod_opt_type(timeout_action) ->
-    fun (none) -> none;
-	(kill) -> kill
-    end;
 mod_opt_type(_) ->
-    [iqdisc, ping_interval, send_pings, timeout_action].
+    [iqdisc, ping_interval, send_pings].
