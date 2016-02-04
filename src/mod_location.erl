@@ -21,7 +21,7 @@
 -export([on_user_presence_update/3, 
         on_user_unregister_connection/3,
         on_user_register_connection/3,
-        on_user_unavailable/1,
+        on_user_unavailable/2,
         on_user_send_packet/4
 ]).
 
@@ -32,9 +32,8 @@
 %% ejabberd functions for JID manipulation called jlib.
 -include("jlib.hrl").
 %%add and remove hook module on startup and close
--include("ejabberd_c2s.hrl").
 
--record(emptystate, {
+-record(state, {
     host = <<"">>
     }).
 
@@ -62,15 +61,15 @@ stop(Host) ->
 init([Host, Opts]) ->
     ejabberd_hooks:add(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
     ejabberd_hooks:add(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:add(user_send_packet, Host, ?MODULE, on_user_send_packet, 100),
+    ejabberd_hooks:add(user_started_sending_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
-    {ok, #emptystate{host = Host}}.
+    {ok, #state{host = Host}}.
 
-terminate(_Reason, #emptystate{host = Host}) ->
+terminate(_Reason, #state{host = Host}) ->
     ejabberd_hooks:delete(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
     ejabberd_hooks:delete(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:delete(user_send_packet, Host, ?MODULE, on_user_send_packet, 100),
+    ejabberd_hooks:delete(user_started_sending_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100).
 
@@ -111,14 +110,8 @@ start_link(Host, Opts) ->
               [Host, Opts], []).
 
 
-on_user_send_packet(Packet, C2SState, From, To) -> 
-    case C2SState#state.is_available of
-        false -> 
-            set_available(C2SState#state.user, C2SState#state.server);
-        _ ->
-            ok
-    end,
-    Packet;
+on_user_send_packet(C2SState, User, Server) -> 
+    set_available(User, Server).
 
 on_user_send_packet(Packet, _C2SState, _, _) ->
     Packet.
@@ -136,11 +129,8 @@ on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
 on_user_presence_update(Packet, User, Server) -> 
     Packet.
 
-on_user_unavailable(#state{user = User, server = Server} = State) ->
-    set_unavailable(User, Server);
-
-on_user_unavailable(_) ->
-    ok.
+on_user_unavailable(User, Server) ->
+    set_unavailable(User, Server).
 
 on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
     set_unavailable(LUser, LServer);
