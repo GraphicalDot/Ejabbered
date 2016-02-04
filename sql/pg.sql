@@ -27,6 +27,7 @@ CREATE TABLE users (
     last_seen text,
     resume_id text,
     apple_udid, text
+    is_available boolean
 );
 
 -- To support SCRAM auth:
