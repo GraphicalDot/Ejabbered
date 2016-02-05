@@ -10,23 +10,24 @@
 -include("jlib.hrl").
 -include_lib("apns/include/apns.hrl").
 
--export([start/2, stop/1]).
+-export([start/2, stop/1, start_link/2]).
 
 -export([init/1, handle_call/3, handle_cast/2,
 	 handle_info/2, terminate/2, code_change/3]).
 
 
--export([handle_error/2, 
+-export([on_offline_user_recieving_message/3,
+        handle_error/2, 
         handle_app_deletion/1]).
 
 
 -define(DEFAULT_APPLE_HOST, "gateway.sandbox.push.apple.com").
 -define(DEFAULT_APPLE_PORT, 2195).
 -define(DEFAULT_CERT, undefined).
--define(DEFAULT_CERT_FILE, "priv/cert_file.pem").
+-define(DEFAULT_CERT_FILE, "cert.pem").
 -define(DEFAULT_KEY, undefined).
 -define(DEFAULT_KEY_FILE, undefined).
--define(DEFAULT_CERT_PASSWORD, undefined).
+-define(DEFAULT_CERT_PASSWORD, "pushchat").
 -define(DEFAULT_TIMEOUT, 30000).
 -define(DEFAULT_FEEDBACK_HOST, "feedback.sandbox.push.apple.com").
 -define(DEFAULT_FEEDBACK_PORT, 2196).
@@ -39,7 +40,7 @@
     }).
 
 
-%%========================================================
+%%=======================================nxdomain=================
 %% gen_mod callbacks
 %%========================================================
 
@@ -96,10 +97,13 @@ terminate(_Reason, State) ->
 %% gen_server callbacks
 %%====================================================================
 
-
 handle_cast({notify, #apns_msg{} = Message}, State) -> 
     apns:send_message(State#state.apns_connection_name, Message),
+    {noreply, State};
+
+handle_cast(_Info, State) -> 
     {noreply, State}.
+
 
 handle_call(stop, _From, State) -> 
   {stop, normal, ok, State}.
@@ -130,9 +134,10 @@ on_offline_user_recieving_message(From, To, Packet) ->
     User = To#jid.luser,
     Server = To#jid.lserver, 
     case get_udid_for_user(User, Server) of
-        {ok, Udid} ->
-            handle_push_notification(To, Packet, Udid, Server),
+        {ok, null} ->
             ok;
+        {ok, Udid} ->
+            handle_push_notification(To, Packet, Udid, Server);
         _ -> 
             ok
     end,
@@ -154,84 +159,35 @@ get_udid_for_user(User, Server) ->
 %% Erlsom has been used for parsing the xml key 
 %% value pair. Each sml tag is transformed to a tuple
 %% of {Tag, Attributes, Content}
- handle_push_notification(To, Message, Udid, Server) ->
-    case erlsom:simple_form(Message) of 
-        {ok, {"message", _, Content}, Tail} -> 
-            {_, {_, _, ContentList}} = lists:keysearch("properties", 1, Content),
-            [MimeNameValue] = lists:filter(
-                fun({_, _, NameValueList}) -> 
-                    case lists:keysearch(["mime_type"], 3, NameValueList) of
-                        {value, _} ->
-                            true;
-                        _ ->
-                            false
-                    end
-                end, 
-                ContentList
-            ),
-            {_, _, [MessageType]} = lists:keysearch("value", 1, MimeNameValue),
-            Message = case MessageType of
-                "t" ->
-                    <<" You received a message ">>;
-                "s" ->
-                    <<" You received a sticker ">>;
-                "i" ->
-                    <<" You received an image ">>;
-                "a" ->
-                    <<" You received audio clip ">>;
-                "v" ->
-                    <<" You received video clip ">>;
-                _ ->
-                    error 
-            end,
-            case Message of 
-                error -> 
-                    ok;
-                _ -> 
-                    notify(To, Message, Udid, Server)
-            end;
-        _ ->
-            ok
+handle_push_notification(To, Message, Udid, Server) ->
+    case xml:get_subtag_cdata(Message, <<"body">>) of 
+        <<>> ->
+            ok;
+        Body ->
+            Notification = <<" You received a message ">>,
+            notify(To, Notification, Udid, Server)
     end.
 
 notify(To, Message, Udid, Host) ->
   Proc = gen_mod:get_module_proc(Host, ?MODULE),
-  gen_server:cast(Proc, {notify, 
-    #apns_msg{
-        alert = Message,
-        device_token = Udid 
-    }
-  }).
+  APNSNotification = #apns_msg{alert = Message},
+  gen_server:cast(Proc, {notify, APNSNotification}).
 
-
-  get_apns_connection_info() -> 
+get_apns_connection_info() -> 
       #apns_connection{
-            apple_host        = gen_mod:get_opt(apple_host, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_APPLE_HOST),
-            apple_port        = gen_mod:get_opt(apple_port, fun(B) when is_integer(B) -> B end, 
-                ?DEFAULT_APPLE_PORT),
-          	cert              = gen_mod:get_opt(cert, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_CERT),
-          	cert_file         = gen_mod:get_opt(cert_file, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_CERT_FILE),
-          	key               = gen_mod:get_opt(key, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_KEY),
-          	key_file          = gen_mod:get_opt(key_file, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_KEY_FILE),
-          	cert_password     = gen_mod:get_opt(cert_password, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_CERT_PASSWORD),
-          	timeout           = gen_mod:get_opt(timeout, fun(B) when is_integer(B) -> B end, 
-                ?DEFAULT_TIMEOUT),
-          	feedback_host     = gen_mod:get_opt(feedback_host, fun(B) when is_binary(B) -> B end, 
-                ?DEFAULT_FEEDBACK_HOST),
-          	feedback_port     = gen_mod:get_opt(feedback_port, fun(B) when is_integer(B) -> B end, 
-                ?DEFAULT_FEEDBACK_PORT),
-          	feedback_timeout  = gen_mod:get_opt(feedback_timeout, fun(B) when is_integer(B) -> B end, 
-                ?DEFAULT_FEEDBACK_TIMEOUT),
-          	expires_conn      = gen_mod:get_opt(expires_conn, fun(B) when is_integer(B) -> B end, 
-                ?DEFAULT_EXPIRES_CONN),
-          	extra_ssl_opts    = gen_mod:get_opt(extra_ssl_opts, fun(B) when is_list(B) -> B end, 
-                ?DEFAULT_EXTRA_SSL_OPTS),
+            apple_host        = ?DEFAULT_APPLE_HOST,
+            apple_port        = ?DEFAULT_APPLE_PORT,
+            cert              = ?DEFAULT_CERT,
+            cert_file         = ?DEFAULT_CERT_FILE,
+            key               = ?DEFAULT_KEY,
+            key_file          = ?DEFAULT_KEY_FILE,
+            cert_password     = ?DEFAULT_CERT_PASSWORD,
+            timeout           = ?DEFAULT_TIMEOUT,
+            feedback_host     = ?DEFAULT_FEEDBACK_HOST,
+            feedback_port     = ?DEFAULT_FEEDBACK_PORT,
+            feedback_timeout  = ?DEFAULT_FEEDBACK_TIMEOUT,
+            expires_conn      = ?DEFAULT_EXPIRES_CONN,
+            extra_ssl_opts    = ?DEFAULT_EXTRA_SSL_OPTS,
             error_fun = fun ?MODULE:handle_error/2,
             feedback_fun = fun ?MODULE:handle_app_deletion/1
         }.
