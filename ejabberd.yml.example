@@ -662,7 +662,7 @@ modules:
   mod_time: {}
   mod_vcard: {}
   mod_version: {}
-
+  mod_send_unreceived_messages: {}
 ##
 ## Enable modules with custom options in a specific virtual host
 ##
