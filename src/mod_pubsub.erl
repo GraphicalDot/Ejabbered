@@ -2605,6 +2605,8 @@ get_affiliations(Host, Node, JID) ->
 	    if not RetrieveFeature ->
 		    {error,
 			extended_error(?ERR_FEATURE_NOT_IMPLEMENTED, unsupported, <<"modify-affiliations">>)};
+		Affiliation /= owner ->
+		    {error, ?ERR_FORBIDDEN};
 		true ->
 		    node_call(Host, Type, get_node_affiliations, [Nidx])
 	    end
