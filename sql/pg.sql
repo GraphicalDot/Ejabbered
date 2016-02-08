@@ -19,13 +19,44 @@
 CREATE TABLE users (
     username text PRIMARY KEY,
     "password" text NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now()
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    lat double precision,
+    lng double precision,
+    fb_id bigint,
+    fb_name text,
+    last_seen text,
+    resume_id text,
+    apple_udid, text
+    is_available boolean
 );
 
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
 -- ALTER TABLE users ADD COLUMN salt text NOT NULL DEFAULT '';
 -- ALTER TABLE users ADD COLUMN iterationcount integer NOT NULL DEFAULT 0;
+
+CREATE EXTENSION cube;
+CREATE EXTENSION earthdistance;
+CREATE INDEX location_index on users USING gist(ll_to_earth(lat, lng));
+
+CREATE TABLE registered_users (
+    authorization_code text ,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    username text NOT NULL PRIMARY KEY,
+    expiration_time bigint
+);
+
+CREATE TABLE interest (
+    interest_id SERIAL PRIMARY KEY ,
+    interest_name text UNIQUE NOT NULL
+);
+
+CREATE TABLE users_interest (
+    interest_id integer REFERENCES interest ON DELETE CASCADE,
+    username text REFERENCES users ON DELETE CASCADE,
+    PRIMARY KEY (interest_id, username)
+);
+
 
 CREATE TABLE last (
     username text PRIMARY KEY,

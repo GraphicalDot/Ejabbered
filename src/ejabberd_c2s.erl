@@ -54,7 +54,9 @@
 	 send_filtered/5,
 	 broadcast/4,
 	 get_subscribed/1,
-         transform_listen_option/2]).
+     transform_listen_option/2,
+     set_unavailable/1
+]).
 
 -export([init/1, wait_for_stream/2, wait_for_auth/2,
 	 wait_for_feature_request/2, wait_for_bind/2,
@@ -71,6 +73,7 @@
 
 %% pres_a contains all the presence available send (either through roster mechanism or directed).
 %% Directed presence unavailable remove user from pres_a.
+
 %-define(DBGFSM, true).
 
 -ifdef(DBGFSM).
@@ -154,6 +157,10 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
+
+set_unavailable(FsmRef) ->
+	(?GEN_FSM):send_all_state_event(FsmRef, set_unavailable).
+
 start(SockData, Opts) ->
     ?SUPERVISOR_START.
 
@@ -1190,7 +1197,16 @@ session_established(closed, StateData) ->
 %% Process packets sent by user (coming from user on c2s XMPP
 %% connection)
 session_established2(El, StateData) ->
-
+    case StateData#state.is_available of
+    	false -> 
+		    ejabberd_hooks:run(
+		    	user_started_sending_packet,
+		    	StateData#state.server,
+		    	[StateData#state.user, StateData#state.server]
+		    );
+		_ ->
+			ok
+	end,
     #xmlel{name = Name, attrs = Attrs} = El,
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
@@ -1268,7 +1284,8 @@ session_established2(El, StateData) ->
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-    fsm_next_state(session_established, NewState).
+	UpdatedAvailabilityState = NewState#state{is_available = true},
+    fsm_next_state(session_established, UpdatedAvailabilityState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
     session_established(Event, StateData),
@@ -1300,6 +1317,25 @@ wait_for_resume(Event, StateData) ->
 %%          {next_state, NextStateName, NextStateData, Timeout} |
 %%          {stop, Reason, NewStateData}
 %%----------------------------------------------------------------------
+
+handle_event(set_unavailable, StateName, StateData) -> 
+	PresencePacket = #xmlel{
+		name = <<"presence">>,
+		attrs = [{<<"type">>, <<"unavailable">>}],
+		children = [
+			#xmlel{
+				name = <<"status">>,
+				children = [{xmlcdata, <<"Offline">>}]
+				}
+		]
+	},
+	From = StateData#state.jid,
+	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
+	NewState = StateData#state{is_available = false},
+	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.user, StateData#state.server]),
+	fsm_next_state(session_established, NewState);
+
+
 handle_event(_Event, StateName, StateData) ->
     fsm_next_state(StateName, StateData).
 
