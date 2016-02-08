@@ -145,9 +145,6 @@ update_tables() ->
 	    mnesia:delete_table(local_session);
 	false ->
 	    ok
-<<<<<<< HEAD
-    end.
-=======
     end.
 
 get_session_resume_id(User) -> 
@@ -159,4 +156,3 @@ get_session_resume_id(User) ->
     _ ->
       error
   end.
->>>>>>> 6891dba4c2bd2947a4a9888fe6caff799e6aaa3f
