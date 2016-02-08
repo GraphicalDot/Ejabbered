@@ -55,4 +55,5 @@
 		mgmt_resend,
 		mgmt_stanzas_in = 0,
 		mgmt_stanzas_out = 0,
-		lang = <<"">>}).
+		lang = <<"">>,
+		is_available = true}).
