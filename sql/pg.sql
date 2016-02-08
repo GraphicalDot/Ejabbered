@@ -26,6 +26,7 @@ CREATE TABLE users (
     fb_name text,
     last_seen text,
     resume_id text,
+    apple_udid, text
     is_available boolean
 );
 
