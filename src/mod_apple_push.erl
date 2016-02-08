@@ -170,7 +170,7 @@ handle_push_notification(To, Message, Udid, Server) ->
 
 notify(To, Message, Udid, Host) ->
   Proc = gen_mod:get_module_proc(Host, ?MODULE),
-  APNSNotification = #apns_msg{alert = Message},
+  APNSNotification = #apns_msg{alert = Message, device_token = Udid},
   gen_server:cast(Proc, {notify, APNSNotification}).
 
 get_apns_connection_info() -> 
