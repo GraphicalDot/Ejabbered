@@ -8,5 +8,4 @@
 -type info() :: [{conn, atom()} | {ip, ip()} | {node, atom()}
                  | {oor, boolean()} | {auth_module, atom()}].
 -type prio() :: undefined | integer().
-
 -endif.
