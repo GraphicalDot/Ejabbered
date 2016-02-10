@@ -1196,7 +1196,19 @@ session_established(closed, StateData) ->
 
 %% Process packets sent by user (coming from user on c2s XMPP
 %% connection)
-session_established2(El, StateData) ->
+session_established2(El, OldStateData) ->
+	case OldStateData#state.has_saved_messages of  
+		true -> 
+		    ejabberd_hooks:run(
+		    	user_new_session_start,
+		    	OldStateData#state.server,
+		    	[OldStateData#state.jid]
+		    ),
+	    	StateData = OldStateData#state{has_saved_messages = false};
+		_ ->
+			StateData = OldStateData,
+			ok
+	end,
     case StateData#state.is_available of
     	false -> 
 		    ejabberd_hooks:run(
@@ -2817,26 +2829,11 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     when H > NumStanzasOut ->
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-    ejabberd_hooks:run(
-    	user_packet_confirmation_hook, 
-    	StateData#state.server,
-		[
-			StateData,
-			H
-		]
-	),
     mgmt_queue_drop(StateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
+
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
-    ejabberd_hooks:run(
-    	user_packet_confirmation_hook, 
-    	StateData#state.server,
-		[
-			StateData,
-			H
-		]
-	),
     mgmt_queue_drop(StateData, H).
 
 update_num_stanzas_in(#state{mgmt_state = active} = StateData, El) ->
@@ -2873,6 +2870,14 @@ mgmt_queue_add(StateData, El) ->
 	       Num ->
 		   Num + 1
 	     end,
+    ejabberd_hooks:run(
+    	mgmt_queue_add_hook, 
+    	StateData#state.server,
+		[
+			El,
+			StateData
+		]
+	),
     NewQueue = queue:in({NewNum, erlang:timestamp(), El}, StateData#state.mgmt_queue),
     NewState = StateData#state{mgmt_queue = NewQueue,
 			       mgmt_stanzas_out = NewNum},
@@ -2881,6 +2886,14 @@ mgmt_queue_add(StateData, El) ->
 mgmt_queue_drop(StateData, NumHandled) ->
     NewQueue = jlib:queue_drop_while(fun({N, _T, _E}) -> N =< NumHandled end,
 				     StateData#state.mgmt_queue),
+    ejabberd_hooks:run(
+    	user_packet_confirmation_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			NumHandled
+		]
+	),
     StateData#state{mgmt_queue = NewQueue}.
 
 check_queue_length(#state{mgmt_max_queue = Limit} = StateData)
