@@ -25,25 +25,22 @@
 -export([start/2, stop/1]).
 -export([
     send_user_unreceived_messages/1, 
-    handle_unreceived_messages/5, 
-    delete_saved_unreceived_messages/2, 
-    delete_all_saved_unreceived_messages/2
-  ]).
+    handle_unreceived_messages/2, 
+    delete_saved_unreceived_messages/2  
+    ]).
 
 start(Host, Opts) ->
   init_db(),
 
-  ejabberd_hooks:add(user_available_hook, Host, ?MODULE, send_user_unreceived_messages, 10),
-  ejabberd_hooks:add(user_receive_packet, Host, ?MODULE, handle_unreceived_messages, 10),
+  ejabberd_hooks:add(user_new_session_start, Host, ?MODULE, send_user_unreceived_messages, 10),
+  ejabberd_hooks:add(mgmt_queue_add_hook, Host, ?MODULE, handle_unreceived_messages, 10),
   ejabberd_hooks:add(user_packet_confirmation_hook, Host, ?MODULE, delete_saved_unreceived_messages, 10),
-  ejabberd_hooks:add(user_session_terminate_hook, Host, ?MODULE, delete_all_saved_unreceived_messages, 10),
   ok.
 
 stop(Host) ->
-  ejabberd_hooks:delete(user_available_hook, Host, ?MODULE, send_user_unreceived_messages, 10),
-  ejabberd_hooks:delete(user_receive_packet, Host, ?MODULE, handle_unreceived_messages, 10),
+  ejabberd_hooks:delete(user_new_session_start, Host, ?MODULE, send_user_unreceived_messages, 10),
+  ejabberd_hooks:delete(mgmt_queue_add_hook, Host, ?MODULE, handle_unreceived_messages, 10),
   ejabberd_hooks:delete(user_packet_confirmation_hook, Host, ?MODULE, delete_saved_unreceived_messages, 10),
-  ejabberd_hooks:delete(user_session_terminate_hook, Host, ?MODULE, delete_all_saved_unreceived_messages, 10),
   ok.
 
 %% ====================================================================
@@ -59,14 +56,13 @@ init_db() ->
 send_user_unreceived_messages(JID) ->
   User = JID#jid.luser,
   F = fun () ->
-    Rs = mnesia:wread({unreceived_message, User}),
-    mnesia:delete({unreceived_message, User}),
-    Rs
+    mnesia:wread({unreceived_message, User}),
+    mnesia:delete(unreceived_message, User, write)
   end,
     case mnesia:transaction(F) of
       {atomic, UnreceivedMessages} ->
           lists:foreach(
-            fun(#unreceived_message.packet = El) ->
+            fun(#unreceived_message{packet = El}) ->
                       #xmlel{attrs = Attrs} = El,
                   From_s = xml:get_attr_s(<<"from">>, Attrs),
                   From = jlib:string_to_jid(From_s),
@@ -75,13 +71,12 @@ send_user_unreceived_messages(JID) ->
                   ejabberd_router:route(From, To, El)
                 end,
             lists:keysort(#unreceived_message.timestamp, UnreceivedMessages)
-          ),
-      ?INFO_MSG(" Sent lots of messages ", []);
+          );
       _ -> ok
     end,
     ok.
 
-handle_unreceived_messages(Pkt, StateData, _JID, _Peer, _To) ->
+handle_unreceived_messages(Pkt, StateData) ->
     case should_save_message(Pkt) of
         true ->
           save_unreceived_messages(Pkt, StateData);
@@ -91,10 +86,16 @@ handle_unreceived_messages(Pkt, StateData, _JID, _Peer, _To) ->
     Pkt.
 
 save_unreceived_messages(Message, StateData) ->
+  NewNum = case StateData#state.mgmt_stanzas_out of
+     4294967295 ->
+   0;
+     Num ->
+   Num + 1
+   end,
   AwayMessage = #unreceived_message{
     user = StateData#state.user,
     packet = Message,
-    h_count = StateData#state.mgmt_stanzas_out, 
+    h_count = NewNum, 
     timestamp = erlang:timestamp()
   },
   F = fun() ->
@@ -142,10 +143,10 @@ delete_saved_unreceived_messages(StateData, HCount) ->
         ?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
     end.
 
-delete_all_saved_unreceived_messages(StateData, Reason) when Reason == normal ->
-  US = {StateData#state.user, StateData#state.server},
+delete_all_saved_unreceived_messages(JID) ->
+  User = JID#jid.luser,
   Q = fun() ->
-    mnesia:delete(unreceived_message, US, write)
+    mnesia:delete(unreceived_message, User, write)
   end,
   case mnesia:transaction(Q) of
     {atomic, _} -> 
