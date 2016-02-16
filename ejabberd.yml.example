@@ -663,6 +663,8 @@ modules:
   mod_time: {}
   mod_vcard: {}
   mod_version: {}
+  mod_last_seen: {}
+  mod_stanza_ack: {}
 
 ##
 ## Enable modules with custom options in a specific virtual host
