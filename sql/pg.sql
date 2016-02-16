@@ -19,6 +19,7 @@
 CREATE TABLE users (
     username text PRIMARY KEY,
     "password" text NOT NULL,
+    phone_number text UNIQUE NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     lat double precision,
     lng double precision,
@@ -42,7 +43,7 @@ CREATE INDEX location_index on users USING gist(ll_to_earth(lat, lng));
 CREATE TABLE registered_users (
     authorization_code text ,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
-    username text NOT NULL PRIMARY KEY,
+    phone_number text NOT NULL, 
     expiration_time bigint
 );
 
@@ -70,9 +71,6 @@ CREATE TABLE rosterusers (
     jid text NOT NULL,
     nick text NOT NULL,
     subscription character(1) NOT NULL,
-    ask character(1) NOT NULL,
-    askmessage text NOT NULL,
-    server character(1) NOT NULL,
     subscribe text,
     "type" text,
     created_at TIMESTAMP NOT NULL DEFAULT now()
