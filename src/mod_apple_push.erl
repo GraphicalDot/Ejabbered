@@ -73,7 +73,7 @@ init([Host, Opts]) ->
   ApnsConnectionName = apple_connection, 
     case apns:connect(
         ApnsConnectionName,
-        get_apns_connection_info()
+        get_apns_connection_info(Opts)
     )
         of
         {error, Reason} -> 
@@ -156,9 +156,6 @@ get_udid_for_user(User, Server) ->
         false
     end.
 
-%% Erlsom has been used for parsing the xml key 
-%% value pair. Each sml tag is transformed to a tuple
-%% of {Tag, Attributes, Content}
 handle_push_notification(To, Message, Udid, Server) ->
     case xml:get_subtag_cdata(Message, <<"body">>) of 
         <<>> ->
@@ -173,15 +170,15 @@ notify(To, Message, Udid, Host) ->
   APNSNotification = #apns_msg{alert = Message, device_token = Udid},
   gen_server:cast(Proc, {notify, APNSNotification}).
 
-get_apns_connection_info() -> 
+get_apns_connection_info(Opts) -> 
       #apns_connection{
-            apple_host        = ?DEFAULT_APPLE_HOST,
-            apple_port        = ?DEFAULT_APPLE_PORT,
+            apple_host        = gen_mod:get_opt(apple_host, Opts, fun(A) -> A end, ?DEFAULT_APPLE_HOST),
+            apple_port        = gen_mod:get_opt(apple_port, Opts, fun(A) -> A end, ?DEFAULT_APPLE_PORT),
             cert              = ?DEFAULT_CERT,
-            cert_file         = ?DEFAULT_CERT_FILE,
+            cert_file         = gen_mod:get_opt(cert_file, Opts, fun(A) -> A end, ?DEFAULT_CERT_FILE),
             key               = ?DEFAULT_KEY,
             key_file          = ?DEFAULT_KEY_FILE,
-            cert_password     = ?DEFAULT_CERT_PASSWORD,
+            cert_password     = gen_mod:get_opt(cert_password, Opts, fun(A) -> A end, ?DEFAULT_CERT_PASSWORD),
             timeout           = ?DEFAULT_TIMEOUT,
             feedback_host     = ?DEFAULT_FEEDBACK_HOST,
             feedback_port     = ?DEFAULT_FEEDBACK_PORT,
