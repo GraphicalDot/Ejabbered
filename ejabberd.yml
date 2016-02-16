@@ -624,20 +624,10 @@ modules:
   mod_vcard_xupdate: {}
   mod_last_seen: {}
   mod_apple_push: {}
-    # apple_port: 
-    # cert: 
-    # cert_file: 
-    # key: 
-    # key_file: 
-    # cert_password: 
-    # timeout: 
-    # error_fun: 
-    # feedback_host: 
-    # feedback_port: 
-    # feedback_fun: 
-    # feedback_timeout: 
-    # expires_conn: 
-    # extra_ssl_opts: 
+    apple_host: "gateway.sandbox.push.apple.com"
+    apple_port: 2195 
+    cert_file: "cert.pem" 
+    cert_password: "pushchat"
 ##
 ## Enable modules with custom options in a specific virtual host
 ##
