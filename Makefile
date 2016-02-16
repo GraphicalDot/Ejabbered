@@ -115,9 +115,7 @@ install: all
 	#
 	# Configuration files
 	$(INSTALL) -d -m 750 $(G_USER) $(ETCDIR)
-	[ -f $(ETCDIR)/ejabberd.yml ] \
-		&& $(INSTALL) -b -m 640 $(G_USER) ejabberd.yml.example $(ETCDIR)/ejabberd.yml-new \
-		|| $(INSTALL) -b -m 640 $(G_USER) ejabberd.yml.example $(ETCDIR)/ejabberd.yml
+	$(INSTALL) -b -m 640 $(G_USER) ejabberd.yml.example $(ETCDIR)/ejabberd.yml
 	$(SED) -e "s*{{rootdir}}*/*" \
 		-e "s*{{installuser}}**" \
 		-e "s*{{bindir}}*${exec_prefix}/bin*" \
