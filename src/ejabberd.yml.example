@@ -580,8 +580,16 @@ modules:
     db_type: odbc
     default: always
   mod_adhoc: {}
+  ##mod_admin_extra: {}
+  mod_announce: # recommends mod_adhoc
+    access: announce
   mod_blocking: {} # requires mod_privacy
   mod_caps: {}
+  mod_muc:
+    history_size: 0
+    max_users: 10000
+    db_type: odbc
+  mod_carboncopy: {}
   mod_client_state:
     drop_chat_states: true
     queue_presence: false
@@ -589,12 +597,21 @@ modules:
   mod_disco: {}
   #mod_stanza_ack: {}
   ## mod_echo: {}
+  ##mod_mam_mnesia: 
+  ##  request_activates_archiving: false	
   mod_irc: {}
   mod_http_bind: {}
   ## mod_http_fileserver:
   ##   docroot: "/var/www"
   ##   accesslog: "/var/log/ejabberd/access.log"
   mod_last: {}
+  mod_muc: 
+    ## host: "conference.@HOST@"
+    access: muc
+    access_create: muc_create
+    access_persistent: muc_create
+    access_admin: muc_admin
+    db_type: odbc
   mod_muc_log: {}
   ## mod_multicast: {}
   mod_offline: 
@@ -664,7 +681,7 @@ modules:
   mod_stats: {}
   mod_time: {}
   mod_vcard: 
-    db_type: mnesia 
+    db_type: odbc 
   mod_version: {}
   ##mod_stanza_ack: {}
   mod_proxy65: 
