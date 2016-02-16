@@ -2602,14 +2602,7 @@ get_affiliations(Host, Node, JID) ->
 	    Features = plugin_features(Host, Type),
 	    RetrieveFeature = lists:member(<<"modify-affiliations">>, Features),
 	    {result, Affiliation} = node_call(Host, Type, get_affiliation, [Nidx, JID]),
-	    if not RetrieveFeature ->
-		    {error,
-			extended_error(?ERR_FEATURE_NOT_IMPLEMENTED, unsupported, <<"modify-affiliations">>)};
-		Affiliation /= owner ->
-		    {error, ?ERR_FORBIDDEN};
-		true ->
-		    node_call(Host, Type, get_node_affiliations, [Nidx])
-	    end
+		node_call(Host, Type, get_node_affiliations, [Nidx])
     end,
     case transaction(Host, Node, Action, sync_dirty) of
 	{result, {_, []}} ->
