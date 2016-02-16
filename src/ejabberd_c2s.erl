@@ -67,10 +67,12 @@
 
 -include("ejabberd.hrl").
 -include("logger.hrl").
-
 -include("jlib.hrl").
 
 -include("ejabberd_c2s.hrl").
+
+%% pres_a contains all the presence available send (either through roster mechanism or directed).
+%% Directed presence unavailable remove user from pres_a.
 
 %-define(DBGFSM, true).
 
@@ -1081,6 +1083,13 @@ wait_for_session({xmlstreamelement, El}, StateData) ->
 		    ?INFO_MSG("(~w) Opened session for ~s",
 			      [NewStateData#state.socket,
 			       jlib:jid_to_string(JID)]),
+			ejabberd_hooks:run(
+				user_session_start, 
+				StateData#state.server,
+			   [
+			   		JID
+			    ]
+			),
 		    Res = jlib:make_result_iq_reply(El#xmlel{children = []}),
 		    NewState = send_stanza(NewStateData, Res),
 		    change_shaper(NewState, JID),
@@ -1187,7 +1196,19 @@ session_established(closed, StateData) ->
 
 %% Process packets sent by user (coming from user on c2s XMPP
 %% connection)
-session_established2(El, StateData) ->
+session_established2(El, OldStateData) ->
+	case OldStateData#state.has_saved_messages of  
+		true -> 
+		    ejabberd_hooks:run(
+		    	user_new_session_start,
+		    	OldStateData#state.server,
+		    	[OldStateData#state.jid]
+		    ),
+	    	StateData = OldStateData#state{has_saved_messages = false};
+		_ ->
+			StateData = OldStateData,
+			ok
+	end,
     case StateData#state.is_available of
     	false -> 
 		    ejabberd_hooks:run(
@@ -1667,7 +1688,8 @@ handle_info({route, From, To,
 								 From, To,
 								 Packet, in)
 					   of
-					 allow -> {true, Attrs, StateData};
+					 allow -> 
+					 	{true, Attrs, StateData};
 					 deny ->
                                                case xml:get_attr_s(<<"type">>, Attrs) of
                                                    <<"error">> -> ok;
@@ -1800,7 +1822,15 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A}) ->
 %% Purpose: Shutdown the fsm
 %% Returns: any
 %%----------------------------------------------------------------------
-terminate(_Reason, StateName, StateData) ->
+terminate(Reason, StateName, StateData) ->
+    ejabberd_hooks:run(
+    	user_session_terminate_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			Reason
+		]
+	),
     case StateData#state.mgmt_state of
       resumed ->
 	  ?INFO_MSG("Closing former stream of resumed session for ~s",
@@ -1890,7 +1920,9 @@ send_text(StateData, Text) when StateData#state.mgmt_state == active ->
     end;
 send_text(StateData, Text) ->
     ?DEBUG("Send XML on stream = ~p", [Text]),
-    (StateData#state.sockmod):send(StateData#state.socket, Text).
+    Result = (StateData#state.sockmod):send(StateData#state.socket, Text),
+    Result.
+
 
 send_element(StateData, El) when StateData#state.mgmt_state == pending ->
     ?DEBUG("Cannot send element while waiting for resumption: ~p", [El]);
@@ -1912,6 +1944,7 @@ send_stanza(StateData, Stanza) ->
     StateData.
 
 send_packet(StateData, Packet) ->
+    ?DEBUG("Sending Packet ~p ~n", [Packet]),
     case is_stanza(Packet) of
       true ->
 	  send_stanza(StateData, Packet);
@@ -2797,6 +2830,7 @@ check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H)
     ?DEBUG("~s acknowledged ~B stanzas, but only ~B were sent",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
     mgmt_queue_drop(StateData#state{mgmt_stanzas_out = H}, NumStanzasOut);
+
 check_h_attribute(#state{mgmt_stanzas_out = NumStanzasOut} = StateData, H) ->
     ?DEBUG("~s acknowledged ~B of ~B stanzas",
 	   [jlib:jid_to_string(StateData#state.jid), H, NumStanzasOut]),
@@ -2822,10 +2856,12 @@ send_stanza_and_ack_req(StateData, Stanza) ->
     case send_element(StateData, Stanza) == ok andalso
 	 send_element(StateData, AckReq) == ok of
       true ->
-	  StateData;
+		  StateData;
       false ->
-	  StateData#state{mgmt_state = pending}
+	  	StateData#state{mgmt_state = pending}
     end.
+
+
 
 mgmt_queue_add(StateData, El) ->
     NewNum = case StateData#state.mgmt_stanzas_out of
@@ -2834,6 +2870,14 @@ mgmt_queue_add(StateData, El) ->
 	       Num ->
 		   Num + 1
 	     end,
+    ejabberd_hooks:run(
+    	mgmt_queue_add_hook, 
+    	StateData#state.server,
+		[
+			El,
+			StateData
+		]
+	),
     NewQueue = queue:in({NewNum, erlang:timestamp(), El}, StateData#state.mgmt_queue),
     NewState = StateData#state{mgmt_queue = NewQueue,
 			       mgmt_stanzas_out = NewNum},
@@ -2842,6 +2886,14 @@ mgmt_queue_add(StateData, El) ->
 mgmt_queue_drop(StateData, NumHandled) ->
     NewQueue = jlib:queue_drop_while(fun({N, _T, _E}) -> N =< NumHandled end,
 				     StateData#state.mgmt_queue),
+    ejabberd_hooks:run(
+    	user_packet_confirmation_hook, 
+    	StateData#state.server,
+		[
+			StateData,
+			NumHandled
+		]
+	),
     StateData#state{mgmt_queue = NewQueue}.
 
 check_queue_length(#state{mgmt_max_queue = Limit} = StateData)
