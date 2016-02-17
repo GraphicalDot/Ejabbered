@@ -618,16 +618,13 @@ modules:
   mod_vcard: {}
   mod_version: {}
   mod_stanza_ack: {}
-  mod_proxy65: 
-    host: "proxy.mm.io"
-    name: "File Transfer Proxy"
   mod_vcard_xupdate: {}
   mod_last_seen: {}
-  mod_apple_push: {}
+  mod_apple_push:
     apple_host: "gateway.sandbox.push.apple.com"
     apple_port: 2195 
     cert_file: "cert.pem" 
-    cert_password: "pushchat"
+    cert_password: "pushchat"x
 ##
 ## Enable modules with custom options in a specific virtual host
 ##
