@@ -623,7 +623,7 @@ modules:
   mod_apple_push:
     apple_host: "gateway.sandbox.push.apple.com"
     apple_port: 2195 
-    cert_file: "cert.pem" 
+    cert_file: "/etc/ejabberd/apple_cert.pem" 
     cert_password: "pushchat"
 ##
 ## Enable modules with custom options in a specific virtual host

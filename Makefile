@@ -116,6 +116,7 @@ install: all
 	# Configuration files
 	$(INSTALL) -d -m 750 $(G_USER) $(ETCDIR)
 	$(INSTALL) -b -m 640 $(G_USER) ejabberd.yml $(ETCDIR)/ejabberd.yml
+	$(INSTALL) -b -m 640 $(G_USER) apple_cert.pem $(ETCDIR)/apple_cert.pem
 	$(SED) -e "s*{{rootdir}}*/*" \
 		-e "s*{{installuser}}**" \
 		-e "s*{{bindir}}*${exec_prefix}/bin*" \

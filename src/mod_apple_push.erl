@@ -10,7 +10,7 @@
 -include("jlib.hrl").
 -include_lib("apns/include/apns.hrl").
 
--export([start/2, stop/1, start_link/2]).
+-export([start/2, stop/1, start_link/2, mod_opt_type/1]).
 
 -export([init/1, handle_call/3, handle_cast/2,
 	 handle_info/2, terminate/2, code_change/3]).
@@ -24,7 +24,6 @@
 -define(DEFAULT_APPLE_HOST, "gateway.sandbox.push.apple.com").
 -define(DEFAULT_APPLE_PORT, 2195).
 -define(DEFAULT_CERT, undefined).
--define(DEFAULT_CERT_FILE, "cert.pem").
 -define(DEFAULT_KEY, undefined).
 -define(DEFAULT_KEY_FILE, undefined).
 -define(DEFAULT_CERT_PASSWORD, "pushchat").
@@ -172,13 +171,13 @@ notify(To, Message, Udid, Host) ->
 
 get_apns_connection_info(Opts) -> 
       #apns_connection{
-            apple_host        = gen_mod:get_opt(apple_host, Opts, fun(A) -> A end, ?DEFAULT_APPLE_HOST),
-            apple_port        = gen_mod:get_opt(apple_port, Opts, fun(A) -> A end, ?DEFAULT_APPLE_PORT),
+            apple_host        = binary_to_list(gen_mod:get_opt(apple_host, Opts, fun(A) -> A end, false)),
+            apple_port        = gen_mod:get_opt(apple_port, Opts, fun(A) -> A end, false),
             cert              = ?DEFAULT_CERT,
-            cert_file         = gen_mod:get_opt(cert_file, Opts, fun(A) -> A end, ?DEFAULT_CERT_FILE),
+            cert_file         = gen_mod:get_opt(cert_file, Opts, fun(A) -> A end, false),
             key               = ?DEFAULT_KEY,
             key_file          = ?DEFAULT_KEY_FILE,
-            cert_password     = gen_mod:get_opt(cert_password, Opts, fun(A) -> A end, ?DEFAULT_CERT_PASSWORD),
+            cert_password     = binary_to_list(gen_mod:get_opt(cert_password, Opts, fun(A) -> A end, false)),
             timeout           = ?DEFAULT_TIMEOUT,
             feedback_host     = ?DEFAULT_FEEDBACK_HOST,
             feedback_port     = ?DEFAULT_FEEDBACK_PORT,
@@ -188,3 +187,12 @@ get_apns_connection_info(Opts) ->
             error_fun = fun ?MODULE:handle_error/2,
             feedback_fun = fun ?MODULE:handle_app_deletion/1
         }.
+
+
+mod_opt_type(apple_host) -> fun binary_to_list/1;
+mod_opt_type(apple_port) ->
+    fun (A) when is_integer(A) andalso A >= 0 -> A end;
+mod_opt_type(cert_file) -> fun binary_to_list/1;
+mod_opt_type(cert_password) -> fun binary_to_list/1;
+
+mod_opt_type(_) -> [apple_host, apple_port, cert_file, cert_password].
