@@ -16,9 +16,11 @@
 	 handle_info/2, terminate/2, code_change/3]).
 
 
--export([on_offline_user_recieving_message/3,
+-export([handle_push_notification/3,
         handle_error/2, 
-        handle_app_deletion/1]).
+        handle_app_deletion/1, 
+        on_user_going_offline/4,
+        on_user_coming_online/1]).
 
 
 -define(DEFAULT_APPLE_HOST, "gateway.sandbox.push.apple.com").
@@ -34,8 +36,11 @@
 -define(DEFAULT_EXPIRES_CONN, 300).
 -define(DEFAULT_EXTRA_SSL_OPTS, []).
 
+-define(DICT, dict).
+
 -record(state,{host = <<"">> : binary(),
-        apns_connection_name :: atom()
+        apns_connection_name :: atom(), 
+        ios_offline_users = (?DICT):new() 
     }).
 
 
@@ -59,6 +64,31 @@ stop(Host) ->
 
 
 %%====================================================================
+%% hook callbacks
+%%====================================================================
+
+on_user_going_offline(JID, Server, _Resource, _Status) ->
+    User = JID#jid.luser,
+    Server = JID#jid.lserver, 
+    Proc = gen_mod:get_module_proc(Server, ?MODULE),
+    case get_udid_for_user(User, Server) of
+        {ok, null} ->
+            ok;
+        {ok, Udid} ->
+            gen_server:call(Proc, {add_user_to_notification_list, User});
+        _ -> 
+            ok
+    end,
+    ok.
+
+
+on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
+    Proc = gen_mod:get_module_proc(Server, ?MODULE),
+    gen_server:call(Proc, {remove_user_from_notification_list, User}),
+    ok.
+
+
+%%====================================================================
 %% gen_server callbacks
 %%====================================================================
 
@@ -68,7 +98,10 @@ start_link(Host, Opts) ->
                            [Host, Opts], []).
 
 init([Host, Opts]) ->
-  ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, on_offline_user_recieving_message, 50),
+  ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, handle_push_notification, 50),
+  ejabberd_hooks:add(unset_presence_hook, Host, ?MODULE, on_user_going_offline, 50),
+  ejabberd_hooks:add(user_available_hook, Host, ?MODULE, on_user_coming_online, 50),
+
   ApnsConnectionName = apple_connection, 
     case apns:connect(
         ApnsConnectionName,
@@ -88,7 +121,9 @@ init([Host, Opts]) ->
 
 terminate(_Reason, State) ->
     Host = State#state.host,
-    ejabberd_hooks:delete(offline_message_hook, Host, ?MODULE, on_offline_user_recieving_message, 50),
+    ejabberd_hooks:delete(offline_message_hook, Host, ?MODULE, handle_push_notification, 50),
+    ejabberd_hooks:delete(unset_presence_hook, Host, ?MODULE, on_user_going_offline, 50),
+    ejabberd_hooks:delete(user_available_hook, Host, ?MODULE, on_user_coming_online, 50),
     ok.
 
 
@@ -96,13 +131,31 @@ terminate(_Reason, State) ->
 %% gen_server callbacks
 %%====================================================================
 
-handle_cast({notify, #apns_msg{} = Message}, State) -> 
-    apns:send_message(State#state.apns_connection_name, Message),
+handle_cast({notify, Message, #jid{luser = User}}, State) -> 
+    #state{ios_offline_users = IosOfflineUsers} = State,
+    case (?DICT):find(User, IosOfflineUsers) of
+        error ->
+            ok;            
+        {ok, Value} ->
+            apns:send_message(State#state.apns_connection_name, #apns_msg{device_token = Value, alert = Message})
+    end,
     {noreply, State};
 
 handle_cast(_Info, State) -> 
     {noreply, State}.
 
+handle_call({add_user_to_notification_list, User, IosDeviceId}, _From, State) ->
+    #state{ios_offline_users = IosOfflineUsers} = State,
+    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
+    NewDict = (?DICT):store(User, IosDeviceId, AlteredDict),
+    NewState = State#state{ios_offline_users = NewDict},    
+    {noreply, NewState};
+
+handle_call({remove_user_from_notification_list, User}, _From, State) ->
+    #state{ios_offline_users = IosOfflineUsers} = State,
+    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
+    NewState = State#state{ios_offline_users = AlteredDict},    
+    {noreply, NewState};
 
 handle_call(stop, _From, State) -> 
   {stop, normal, ok, State}.
@@ -128,20 +181,6 @@ handle_app_deletion(_) ->
 %% gen_server internal functions
 %%====================================================================
 
-
-on_offline_user_recieving_message(From, To, Packet) ->
-    User = To#jid.luser,
-    Server = To#jid.lserver, 
-    case get_udid_for_user(User, Server) of
-        {ok, null} ->
-            ok;
-        {ok, Udid} ->
-            handle_push_notification(To, Packet, Udid, Server);
-        _ -> 
-            ok
-    end,
-    Packet.
-
 get_udid_for_user(User, Server) ->
     case ejabberd_odbc:sql_query(
        Server,
@@ -155,19 +194,19 @@ get_udid_for_user(User, Server) ->
         false
     end.
 
-handle_push_notification(To, Message, Udid, Server) ->
-    case xml:get_subtag_cdata(Message, <<"body">>) of 
+handle_push_notification(From, To, Packet) ->
+    #jid{lserver = Server} = From,
+    case xml:get_subtag_cdata(Packet, <<"body">>) of 
         <<>> ->
             ok;
         Body ->
             Notification = <<" You received a message ">>,
-            notify(To, Notification, Udid, Server)
+            notify(To, Notification, Server)
     end.
 
-notify(To, Message, Udid, Host) ->
+notify(To, Message, Host) ->
   Proc = gen_mod:get_module_proc(Host, ?MODULE),
-  APNSNotification = #apns_msg{alert = Message, device_token = Udid},
-  gen_server:cast(Proc, {notify, APNSNotification}).
+  gen_server:cast(Proc, {notify, Message, To}).
 
 get_apns_connection_info(Opts) -> 
       #apns_connection{
@@ -187,6 +226,8 @@ get_apns_connection_info(Opts) ->
             error_fun = fun ?MODULE:handle_error/2,
             feedback_fun = fun ?MODULE:handle_app_deletion/1
         }.
+
+
 
 
 mod_opt_type(apple_host) -> fun binary_to_list/1;
