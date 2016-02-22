@@ -129,6 +129,18 @@ terminate(_Reason, State) ->
 %% gen_server callbacks
 %%====================================================================
 
+handle_cast({add_user_to_notification_list, User, IosDeviceId}, State) ->
+    #state{ios_offline_users = IosOfflineUsers} = State,
+    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
+    NewDict = (?DICT):store(User, IosDeviceId, AlteredDict),
+    NewState = State#state{ios_offline_users = NewDict},    
+    {noreply, NewState};
+
+handle_cast({remove_user_from_notification_list, User}, State) ->
+    #state{ios_offline_users = IosOfflineUsers} = State,
+    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
+    NewState = State#state{ios_offline_users = AlteredDict},    
+    {noreply, NewState};
 
 handle_cast(_Info, State) -> 
     {noreply, State}.
@@ -143,18 +155,6 @@ handle_call({notify, Message, #jid{luser = User}},_From, State) ->
     end,
     {noreply, State};
 
-handle_call({add_user_to_notification_list, User, IosDeviceId}, _From, State) ->
-    #state{ios_offline_users = IosOfflineUsers} = State,
-    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
-    NewDict = (?DICT):store(User, IosDeviceId, AlteredDict),
-    NewState = State#state{ios_offline_users = NewDict},    
-    {noreply, NewState};
-
-handle_call({remove_user_from_notification_list, User}, _From, State) ->
-    #state{ios_offline_users = IosOfflineUsers} = State,
-    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
-    NewState = State#state{ios_offline_users = AlteredDict},    
-    {noreply, NewState};
 
 handle_call(stop, _From, State) -> 
   {stop, normal, ok, State}.
