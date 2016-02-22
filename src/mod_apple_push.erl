@@ -67,15 +67,13 @@ stop(Host) ->
 %% hook callbacks
 %%====================================================================
 
-on_user_going_offline(JID, Server, _Resource, _Status) ->
-    User = JID#jid.luser,
-    Server = JID#jid.lserver, 
+on_user_going_offline(User, Server, _Resource, _Status) ->
     Proc = gen_mod:get_module_proc(Server, ?MODULE),
     case get_udid_for_user(User, Server) of
         {ok, null} ->
             ok;
         {ok, Udid} ->
-            gen_server:call(Proc, {add_user_to_notification_list, User});
+            gen_server:call(Proc, {add_user_to_notification_list, User, Udid});
         _ -> 
             ok
     end,
@@ -131,7 +129,11 @@ terminate(_Reason, State) ->
 %% gen_server callbacks
 %%====================================================================
 
-handle_cast({notify, Message, #jid{luser = User}}, State) -> 
+
+handle_cast(_Info, State) -> 
+    {noreply, State}.
+
+handle_call({notify, Message, #jid{luser = User}},_From, State) -> 
     #state{ios_offline_users = IosOfflineUsers} = State,
     case (?DICT):find(User, IosOfflineUsers) of
         error ->
@@ -140,9 +142,6 @@ handle_cast({notify, Message, #jid{luser = User}}, State) ->
             apns:send_message(State#state.apns_connection_name, #apns_msg{device_token = Value, alert = Message})
     end,
     {noreply, State};
-
-handle_cast(_Info, State) -> 
-    {noreply, State}.
 
 handle_call({add_user_to_notification_list, User, IosDeviceId}, _From, State) ->
     #state{ios_offline_users = IosOfflineUsers} = State,
@@ -170,7 +169,8 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%====================================================================
 %% apns callback functions
 %%====================================================================
-handle_error(_, _) ->
+handle_error(MsgId, Status) ->
+    ?ERROR_MSG("error: ~p - ~p~n", [MsgId, Status]),
   ok.
 
 handle_app_deletion(_) ->
@@ -202,11 +202,12 @@ handle_push_notification(From, To, Packet) ->
         Body ->
             Notification = <<" You received a message ">>,
             notify(To, Notification, Server)
-    end.
+    end,
+    Packet.
 
 notify(To, Message, Host) ->
   Proc = gen_mod:get_module_proc(Host, ?MODULE),
-  gen_server:cast(Proc, {notify, Message, To}).
+  gen_server:call(Proc, {notify, Message, To}).
 
 get_apns_connection_info(Opts) -> 
       #apns_connection{
