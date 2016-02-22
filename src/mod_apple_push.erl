@@ -73,7 +73,7 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
         {ok, null} ->
             ok;
         {ok, Udid} ->
-            gen_server:call(Proc, {add_user_to_notification_list, User, Udid});
+            gen_server:cast(Proc, {add_user_to_notification_list, User, Udid});
         _ -> 
             ok
     end,
@@ -82,7 +82,7 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
 
 on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
     Proc = gen_mod:get_module_proc(Server, ?MODULE),
-    gen_server:call(Proc, {remove_user_from_notification_list, User}),
+    gen_server:cast(Proc, {remove_user_from_notification_list, User}),
     ok.
 
 
