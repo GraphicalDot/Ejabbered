@@ -345,10 +345,10 @@ auth_method: odbc
 ## PostgreSQL server:
 ##
 odbc_type: pgsql
-odbc_server: "localhost"
-odbc_database: "test"
-odbc_username: "test"
-odbc_password: "test"
+odbc_server: "masterdb"
+odbc_database: "test_database"
+odbc_username: "aakarshi"
+odbc_password: "aakarshi"
 odbc_port: 5432
 ##
 ## If you want to specify the port:
@@ -624,7 +624,7 @@ modules:
     apple_host: "gateway.sandbox.push.apple.com"
     apple_port: 2195 
     cert_file: "/etc/ejabberd/apple_cert.pem" 
-    cert_password: "pushchat"
+    cert_password: "pushchatkey"
 ##
 ## Enable modules with custom options in a specific virtual host
 ##
