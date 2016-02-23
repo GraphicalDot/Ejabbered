@@ -625,6 +625,7 @@ modules:
     apple_port: 2195 
     cert_file: "/etc/ejabberd/apple_cert.pem" 
     cert_password: "pushchatkey"
+    reconnection_intensity: 30000
 ##
 ## Enable modules with custom options in a specific virtual host
 ##
