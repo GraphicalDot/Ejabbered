@@ -20,7 +20,8 @@
         handle_error/2, 
         handle_app_deletion/1, 
         on_user_going_offline/4,
-        on_user_coming_online/1]).
+        on_user_coming_online/1,
+        start_connection/1]).
 
 
 -define(DEFAULT_APPLE_HOST, "gateway.sandbox.push.apple.com").
@@ -40,26 +41,29 @@
 
 -record(state,{host = <<"">> : binary(),
         apns_connection_name :: atom(), 
-        ios_offline_users = (?DICT):new() 
+        ios_offline_users = (?DICT):new(),
+        opts,
+        notification_queue = queue:new(), 
+        is_connected = false,
+        reconnection_intensity :: integer(),
+        has_pending_notifications = false
     }).
 
 
-%%=======================================nxdomain=================
+%%========================================================
 %% gen_mod callbacks
 %%========================================================
 
 
 start(Host, Opts) ->
-    Proc = gen_mod:get_module_proc(Host, ?MODULE),
-    ChildSpec = {Proc, {?MODULE, start_link, [Host, Opts]},
+    ChildSpec = {?MODULE, {?MODULE, start_link, [Host, Opts]},
      transient, 1000, worker, [?MODULE]},
     supervisor:start_child(ejabberd_sup, ChildSpec).
 
 stop(Host) ->
-    Proc = gen_mod:get_module_proc(Host, ?MODULE),
-    catch ?GEN_SERVER:call(Proc, stop),
-    supervisor:terminate_child(ejabberd_sup, Proc),
-    supervisor:delete_child(ejabberd_sup, Proc),
+    catch ?GEN_SERVER:call(?MODULE, stop),
+    supervisor:terminate_child(ejabberd_sup, ?MODULE),
+    supervisor:delete_child(ejabberd_sup, ?MODULE),
     ok.
 
 
@@ -68,12 +72,14 @@ stop(Host) ->
 %%====================================================================
 
 on_user_going_offline(User, Server, _Resource, _Status) ->
-    Proc = gen_mod:get_module_proc(Server, ?MODULE),
     case get_udid_for_user(User, Server) of
         {ok, null} ->
             ok;
         {ok, Udid} ->
-            gen_server:call(Proc, {add_user_to_notification_list, User, Udid});
+            case catch gen_server:call(?MODULE, {add_user_to_notification_list, User, Udid}) of
+                {'EXIT', {timeout, _}} ->
+                    ok
+            end;
         _ -> 
             ok
     end,
@@ -81,9 +87,9 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
 
 
 on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
-    Proc = gen_mod:get_module_proc(Server, ?MODULE),
-    gen_server:call(Proc, {remove_user_from_notification_list, User}),
-    ok.
+    case catch gen_server:call(?MODULE, {remove_user_from_notification_list, User}) of
+        {'EXIT', {timeout, _}} -> ok
+    end.
 
 
 %%====================================================================
@@ -91,31 +97,23 @@ on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
 %%====================================================================
 
 start_link(Host, Opts) ->
-    Proc = gen_mod:get_module_proc(Host, ?MODULE),
-    ?GEN_SERVER:start_link({local, Proc}, ?MODULE,
+    ?GEN_SERVER:start_link({local, ?MODULE}, ?MODULE,
                            [Host, Opts], []).
 
 init([Host, Opts]) ->
   ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, handle_push_notification, 50),
   ejabberd_hooks:add(unset_presence_hook, Host, ?MODULE, on_user_going_offline, 50),
   ejabberd_hooks:add(user_available_hook, Host, ?MODULE, on_user_coming_online, 50),
-
+  ReconnectionIntensity = gen_mod:get_opt(reconnection_intensity, Opts, fun(A) -> A end, false),
   ApnsConnectionName = apple_connection, 
-    case apns:connect(
-        ApnsConnectionName,
-        get_apns_connection_info(Opts)
-    )
-        of
-        {error, Reason} -> 
-            ?ERROR_MSG(" mod_apple_push failed to start due to ~p ~n ", [Reason]),
-            {stop, Reason};
-        _ ->
-            State = #state{
-                host = Host,
-                apns_connection_name = ApnsConnectionName
-            },
-           {ok, State}
-      end.
+    State = #state{
+        host = Host,
+        apns_connection_name = ApnsConnectionName,
+        opts = Opts
+    },
+    timer:apply_after(1000, ?MODULE, start_connection, [State]),
+   {ok, State}.
+
 
 terminate(_Reason, State) ->
     Host = State#state.host,
@@ -133,15 +131,44 @@ terminate(_Reason, State) ->
 handle_cast(_Info, State) -> 
     {noreply, State}.
 
-handle_call({notify, Message, #jid{luser = User}},_From, State) -> 
-    #state{ios_offline_users = IosOfflineUsers} = State,
+handle_call({notify, Message, #jid{luser = User}} = JID,_From, #state{is_connected = false} = State) -> 
+    #state{
+        ios_offline_users = IosOfflineUsers, 
+        apns_connection_name = ApnsConnectionName, 
+        notification_queue = NotificationQueue
+    } = State,
+    case (?DICT):find(User, IosOfflineUsers) of
+        error ->
+            NewState = State;            
+        {ok, DeviceToken} ->
+            NewState = State#state{
+                notification_queue = queue:in({Message, DeviceToken}, NotificationQueue), 
+                has_pending_notifications = true
+            }
+    end,
+    {noreply, NewState};
+
+handle_call(
+        {notify, Message, #jid{luser = User}},
+        _From, 
+        #state{has_pending_notifications = PStatus} = State
+    ) -> 
+    
+    case PStatus of
+        true ->
+            flush_queue(State);
+        _ ->
+            ok
+    end,
+    #state{ios_offline_users = IosOfflineUsers, apns_connection_name = ApnsConnectionName} = State,
     case (?DICT):find(User, IosOfflineUsers) of
         error ->
             ok;            
         {ok, Value} ->
-            apns:send_message(State#state.apns_connection_name, #apns_msg{device_token = Value, alert = Message})
+            send_message(ApnsConnectionName, Value, Message)
     end,
-    {noreply, State};
+    {noreply, State#state{notification_queue = queue:new(), has_pending_notifications = false}};
+
 
 handle_call({add_user_to_notification_list, User, IosDeviceId}, _From, State) ->
     #state{ios_offline_users = IosOfflineUsers} = State,
@@ -156,6 +183,13 @@ handle_call({remove_user_from_notification_list, User}, _From, State) ->
     NewState = State#state{ios_offline_users = AlteredDict},    
     {noreply, NewState};
 
+handle_call(start_connection, _From, State) -> 
+    spawn(?MODULE, start_connection, [State]),
+    {noreply, State#state{is_connected = false}};
+
+handle_call(connection_established, _From, State) -> 
+    {noreply, State#state{is_connected = true}};
+
 handle_call(stop, _From, State) -> 
   {stop, normal, ok, State}.
 
@@ -165,21 +199,29 @@ handle_info(_Info, State) ->
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-
 %%====================================================================
 %% apns callback functions
 %%====================================================================
+handle_error(MsgId, shutdown) ->
+    case catch gen_server:call(?MODULE, start_connection) of 
+        {'EXIT', {timeout, _}} ->
+            ok
+    end,
+  ok;
+
 handle_error(MsgId, Status) ->
-    ?ERROR_MSG("error: ~p - ~p~n", [MsgId, Status]),
-  ok.
+    ?ERROR_MSG("error: ~p error in apns connection ~p~n", [MsgId, Status]),
+    ok.
 
 handle_app_deletion(_) ->
-  ok.
+    ok.
 
 
 %%====================================================================
-%% gen_server internal functions
+%% server internal functions
 %%====================================================================
+send_message(ApnsConnectionName, DeviceToken, Message) ->
+    apns:send_message(ApnsConnectionName, #apns_msg{device_token = DeviceToken, alert = Message}).
 
 get_udid_for_user(User, Server) ->
     case ejabberd_odbc:sql_query(
@@ -194,6 +236,35 @@ get_udid_for_user(User, Server) ->
         false
     end.
 
+flush_queue(#state{notification_queue = NotificationQueue, apns_connection_name = ApnsConnectionName} = State) ->
+    NotificationList = queue:to_list(NotificationQueue),
+    lists:foreach(
+        fun ({Message, DeviceToken}) -> 
+            send_message(ApnsConnectionName, DeviceToken, Message)
+        end,
+        NotificationList
+    ).
+
+start_connection(#state{opts = Opts, apns_connection_name = ApnsConnectionName} = State) ->
+    ?INFO_MSG(" ~n Starting apns connection ~n ", []),
+    case apns:connect(
+        ApnsConnectionName,
+        get_apns_connection_info(Opts)
+    ) of 
+        {error, nxdomain} ->
+            ?ERROR_MSG(" Got nxdomain error in mod_apple_push ", []),
+            #state{reconnection_intensity = ReconnectionIntensity} = State, 
+            timer:apply_after(ReconnectionIntensity, ?MODULE, start_connection,
+                [State]);
+        {error, Reason} ->
+            ?INFO_MSG(" ~n Error starting connection ~n  stopping server", [Reason]),
+            gen_server:call(?MODULE, stop);
+        Status ->
+            ?INFO_MSG(" ~n Started apns connection ~n ", []),
+            gen_server:call(?MODULE, connection_established),
+            Status
+    end.
+
 handle_push_notification(From, To, Packet) ->
     #jid{lserver = Server} = From,
     case xml:get_subtag_cdata(Packet, <<"body">>) of 
@@ -206,8 +277,9 @@ handle_push_notification(From, To, Packet) ->
     Packet.
 
 notify(To, Message, Host) ->
-  Proc = gen_mod:get_module_proc(Host, ?MODULE),
-  gen_server:call(Proc, {notify, Message, To}).
+    case catch gen_server:call(?MODULE, {notify, Message, To}) of 
+        {'EXIT', {timeout, _}} -> ok
+    end.
 
 get_apns_connection_info(Opts) -> 
       #apns_connection{
@@ -234,7 +306,12 @@ get_apns_connection_info(Opts) ->
 mod_opt_type(apple_host) -> fun binary_to_list/1;
 mod_opt_type(apple_port) ->
     fun (A) when is_integer(A) andalso A >= 0 -> A end;
+mod_opt_type(reconnection_intensity) ->
+    fun (A) when is_integer(A) andalso A >= 0 -> A end;
 mod_opt_type(cert_file) -> fun binary_to_list/1;
 mod_opt_type(cert_password) -> fun binary_to_list/1;
 
-mod_opt_type(_) -> [apple_host, apple_port, cert_file, cert_password].
+mod_opt_type(_) -> [apple_host, apple_port, cert_file, cert_password, reconnection_intensity].
+
+notify() ->
+    ?ERROR_MSG("Problems in mod_apple_push", []).
