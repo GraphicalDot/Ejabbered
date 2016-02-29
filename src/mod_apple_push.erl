@@ -29,7 +29,7 @@
 -define(DEFAULT_CERT, undefined).
 -define(DEFAULT_KEY, undefined).
 -define(DEFAULT_KEY_FILE, undefined).
--define(DEFAULT_CERT_PASSWORD, "pushchat").
+-define(DEFAULT_CERT_PASSWORD, "pushchatkey").
 -define(DEFAULT_TIMEOUT, 30000).
 -define(DEFAULT_FEEDBACK_HOST, "feedback.sandbox.push.apple.com").
 -define(DEFAULT_FEEDBACK_PORT, 2196).
@@ -76,6 +76,7 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
         {ok, null} ->
             ok;
         {ok, Udid} ->
+            ?INFO_MSG(" Got token ~p for user ~p ", [Udid, User]),
             case catch gen_server:call(?MODULE, {add_user_to_notification_list, User, Udid}) of
                 {'EXIT', {timeout, _}} ->
                     ok
@@ -139,8 +140,10 @@ handle_call({notify, Message, #jid{luser = User}} = JID,_From, #state{is_connect
     } = State,
     case (?DICT):find(User, IosOfflineUsers) of
         error ->
+            ?INFO_MSG(" Got no saved token for user ~p while queuing ", [User]),
             NewState = State;            
         {ok, DeviceToken} ->
+            ?INFO_MSG(" Got  saved token ~p for user ~p while queuing ", [DeviceToken, User]),
             NewState = State#state{
                 notification_queue = queue:in({Message, DeviceToken}, NotificationQueue), 
                 has_pending_notifications = true
@@ -163,9 +166,11 @@ handle_call(
     #state{ios_offline_users = IosOfflineUsers, apns_connection_name = ApnsConnectionName} = State,
     case (?DICT):find(User, IosOfflineUsers) of
         error ->
+            ?INFO_MSG(" Got no saved token for user ~p while sending message ", [User]),
             ok;            
-        {ok, Value} ->
-            send_message(ApnsConnectionName, Value, Message)
+        {ok, DeviceToken} ->
+            ?INFO_MSG(" Got  saved token ~p for user ~p while sending message ", [DeviceToken, User]),
+            send_message(ApnsConnectionName, DeviceToken, Message)
     end,
     {noreply, State#state{notification_queue = queue:new(), has_pending_notifications = false}};
 
