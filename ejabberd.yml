@@ -574,7 +574,8 @@ language: "en"
 ## Modules enabled in all ejabberd virtual hosts.
 ##
 modules: 
-  ##mod_location: {}
+  mod_location: {}
+  mod_muc: {}
   mod_mam:
     db_type: odbc
     default: always
