@@ -34,10 +34,10 @@ on_user_send_info(Packet, _C2SState, From, To) ->
 	case packet_type(Packet) of 
 		S when (S==set) ->
 			store_info(Packet, From),
-			ok;
+			stop;
 		S when (S==get) ->
 			send_last_seen_info(Packet ,From),
-			ok;
+			stop;
 		_ ->
 			Packet
 	end.
