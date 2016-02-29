@@ -25,7 +25,7 @@ CREATE TABLE users (
     lng double precision,
     fb_id bigint,
     fb_name text,
-    last_seen text,
+    last_seen text ,
     resume_id text,
     apple_udid text, 
     is_available boolean
@@ -39,6 +39,30 @@ CREATE TABLE users (
 CREATE EXTENSION cube;
 CREATE EXTENSION earthdistance;
 CREATE INDEX location_index on users USING gist(ll_to_earth(lat, lng));
+CREATE OR REPLACE FUNCTION isnumeric(text) RETURNS BOOLEAN AS $$
+DECLARE x NUMERIC;
+BEGIN
+    x = $1::NUMERIC;
+    RETURN TRUE;
+EXCEPTION WHEN others THEN
+    RETURN FALSE;
+END;
+$$
+STRICT
+LANGUAGE plpgsql IMMUTABLE;
+
+
+CREATE FUNCTION array_intersect(anyarray, anyarray)
+  RETURNS anyarray
+  language sql
+as $FUNCTION$
+    SELECT ARRAY(
+        SELECT UNNEST($1)
+        INTERSECT
+        SELECT UNNEST($2)
+    );
+$FUNCTION$;
+
 
 CREATE TABLE registered_users (
     authorization_code text ,
