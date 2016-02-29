@@ -74,6 +74,7 @@ stop(Host) ->
 on_user_going_offline(User, Server, _Resource, _Status) ->
     case get_udid_for_user(User, Server) of
         {ok, null} ->
+            ?INFO_MSG(" Got no token for user ~p ", [User]),
             ok;
         {ok, Udid} ->
             ?INFO_MSG(" Got token ~p for user ~p ", [Udid, User]),
