@@ -18,11 +18,10 @@
      handle_cast/2, handle_info/2, code_change/3]).
 
 %% Hook callbacks
--export([on_user_sending_offline_status/2,
-        on_user_sending_online_status/2, 
-        on_user_unregister_connection/3,
+-export([on_user_unregister_connection/3,
         on_user_register_connection/3,
         on_user_unavailable/2,
+        on_user_available/2,
         on_user_send_message/4
 ]).
 
@@ -60,8 +59,8 @@ stop(Host) ->
 %%==================================================
 
 init([Host, Opts]) ->
-    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, set_unavailable, 100),
-    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, set_available, 100),
+    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
+    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:add(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:add(user_started_sending_message, Host, ?MODULE, on_user_send_message, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
@@ -69,8 +68,8 @@ init([Host, Opts]) ->
     {ok, #state{host = Host}}.
 
 terminate(_Reason, #state{host = Host}) ->
-    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, set_unavailable, 100),
-    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, set_available, 100),
+    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
+    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:delete(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:delete(user_started_sending_message, Host, ?MODULE, on_user_send_message, 100),
     ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
@@ -119,17 +118,14 @@ on_user_send_message(C2SState, User, Server) ->
 on_user_send_message(Packet, _C2SState, _, _) ->
     Packet.
 
-on_user_sending_offline_status(User, Server) ->
-    set_unavailable(User, Server);
-
-on_user_sending_online_status(User, Server) ->
-    set_available(User, Server);
-
 on_user_presence_update(Packet, User, Server) -> 
     Packet.
 
 on_user_unavailable(User, Server) ->
     set_unavailable(User, Server).
+
+on_user_available(User, Server) ->
+    set_available(User, Server).
 
 on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
     set_unavailable(LUser, LServer);

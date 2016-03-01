@@ -1295,7 +1295,7 @@ session_established2(El, OldStateData) ->
 				      [NewStateData, FromJID, ToJID]),
 			   Data = check_privacy_route(FromJID, NewStateData, FromJID,
 					       ToJID, NewEl0),
-			   Data#state{is_available = True};
+			   Data#state{is_available = true};
 		       _ -> NewStateData
 		     end
 	       end,
@@ -1723,11 +1723,11 @@ handle_info({route, From, To,
 		case NewState#state.apple_udid of 
 			none -> 
 				ok;
-			Value when NewState#state.is_available == false ->
+			DeviceToken when NewState#state.is_available == false ->
 				ejabberd_hooks:run(
 					apple_users_recieved_message, 
 					NewState#state.server,
-					[{Value, FixedPacket, NewState#state.jid}]
+					[DeviceToken, FixedPacket, NewState#state.jid]
 				);
 			_ ->
 				ok		
@@ -3059,7 +3059,7 @@ inherit_session_state(#state{user = U, server = S} = StateData, ResumeID) ->
 					   mgmt_timeout = OldStateData#state.mgmt_timeout,
 					   mgmt_stanzas_in = OldStateData#state.mgmt_stanzas_in,
 					   mgmt_stanzas_out = OldStateData#state.mgmt_stanzas_out,
-					   apple_udid = OldStateData#state.apple_udid
+					   apple_udid = OldStateData#state.apple_udid,
 					   mgmt_state = active}};
 		  {error, Msg} ->
 		      {error, Msg};
@@ -3232,8 +3232,8 @@ run_change_presence_hook(StateData, Packet) ->
 						StateData#state.user,
 						    StateData#state.server
 					]
-			);
+			),
 			StateData#state{is_available = true};
         _ ->  
-        	ok
+        	StateData
     end.
