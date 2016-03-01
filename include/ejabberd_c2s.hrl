@@ -57,4 +57,5 @@
 		mgmt_stanzas_out = 0,
 		lang = <<"">>,
 		is_available = true,
-		has_saved_messages = true}).
+		has_saved_messages = true,
+		apple_udid}).

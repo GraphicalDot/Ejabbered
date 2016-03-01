@@ -1050,8 +1050,9 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 							      [{xmlcdata,
 								jlib:jid_to_string(JID)}]}]}]},
 		      send_element(StateData, jlib:iq_to_xml(Res)),
+		      AppleUdid = get_apple_udid(JID),
 		      fsm_next_state(wait_for_session,
-				     StateData#state{resource = R2, jid = JID})
+				     StateData#state{resource = R2, jid = JID, apple_udid = AppleUdid})
 		end
 	  end;
       _ -> fsm_next_state(wait_for_bind, StateData)
@@ -1209,16 +1210,8 @@ session_established2(El, OldStateData) ->
 			StateData = OldStateData,
 			ok
 	end,
-    case StateData#state.is_available of
-    	false -> 
-		    ejabberd_hooks:run(
-		    	user_started_sending_packet,
-		    	StateData#state.server,
-		    	[StateData#state.user, StateData#state.server]
-		    );
-		_ ->
-			ok
-	end,
+
+
     #xmlel{name = Name, attrs = Attrs} = El,
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
@@ -1265,8 +1258,9 @@ session_established2(El, OldStateData) ->
 				  resource = <<"">>} ->
 				 ?DEBUG("presence_update(~p,~n\t~p,~n\t~p)",
 					[FromJID, PresenceEl, NewStateData]),
-				 presence_update(FromJID, PresenceEl,
-						 NewStateData);
+				 Data = presence_update(FromJID, PresenceEl,
+						 NewStateData),
+			     run_change_presence_hook(Data, PresenceEl0);
 			     _ ->
 				 presence_track(FromJID, ToJID, PresenceEl,
 						NewStateData)
@@ -1286,11 +1280,22 @@ session_established2(El, OldStateData) ->
 						     FromJID, ToJID, NewEl0)
 			   end;
 		       <<"message">> ->
+			        case NewStateData#state.is_available of
+				    	false -> 
+		    				ejabberd_hooks:run(
+		    					user_started_sending_message,
+		    					StateData#state.server,
+		    					[NewStateData#state.user, NewStateData#state.server]
+		    				);
+						_ ->
+							ok
+					end,
 			   NewEl0 = ejabberd_hooks:run_fold(
 				      user_send_packet, Server, NewEl,
 				      [NewStateData, FromJID, ToJID]),
-			   check_privacy_route(FromJID, NewStateData, FromJID,
-					       ToJID, NewEl0);
+			   Data = check_privacy_route(FromJID, NewStateData, FromJID,
+					       ToJID, NewEl0),
+			   Data#state{is_available = True};
 		       _ -> NewStateData
 		     end
 	       end,
@@ -1338,7 +1343,7 @@ handle_event(set_unavailable, StateName, StateData) ->
 			#xmlel{
 				name = <<"status">>,
 				children = [{xmlcdata, <<"Offline">>}]
-				}
+				} 
 		]
 	},
 	From = StateData#state.jid,
@@ -1715,6 +1720,18 @@ handle_info({route, From, To,
 			    NewState#state.server,
 			    FixedPacket0,
 			    [NewState, NewState#state.jid, From, To]),
+		case NewState#state.apple_udid of 
+			none -> 
+				ok;
+			Value when NewState#state.is_available == false ->
+				ejabberd_hooks:run(
+					apple_users_recieved_message, 
+					NewState#state.server,
+					[{Value, FixedPacket, NewState#state.jid}]
+				);
+			_ ->
+				ok		
+		end,
 	    SentStateData = send_packet(NewState, FixedPacket),
 	    ejabberd_hooks:run(c2s_loop_debug, [{route, From, To, Packet}]),
 	    fsm_next_state(StateName, SentStateData);
@@ -3042,6 +3059,7 @@ inherit_session_state(#state{user = U, server = S} = StateData, ResumeID) ->
 					   mgmt_timeout = OldStateData#state.mgmt_timeout,
 					   mgmt_stanzas_in = OldStateData#state.mgmt_stanzas_in,
 					   mgmt_stanzas_out = OldStateData#state.mgmt_stanzas_out,
+					   apple_udid = OldStateData#state.apple_udid
 					   mgmt_state = active}};
 		  {error, Msg} ->
 		      {error, Msg};
@@ -3180,3 +3198,42 @@ opt_type(resource_conflict) ->
     end;
 opt_type(_) ->
     [domain_certfile, max_fsm_queue, resource_conflict].
+
+get_apple_udid(#jid{luser = User, lserver = Server}) ->
+    case ejabberd_odbc:sql_query(
+       Server,
+       [<<"select apple_udid from users " >>, 
+            <<" where username  = ">>,
+            <<"'">>, User, <<"';">>]) of
+
+    {selected, _, [[Udid]]} -> 
+        Udid;
+    _ ->
+        none
+    end.
+
+run_change_presence_hook(StateData, Packet) -> 
+    case xml:get_subtag_cdata(Packet, <<"status">>) of
+        <<"Offline">> ->
+	        ejabberd_hooks:run(
+	        	status_offline_hook, 
+	        	StateData#state.server,
+				[
+					StateData#state.user,
+					    StateData#state.server
+				]
+			),
+			StateData#state{is_available = false};
+        <<"Online">> ->
+	        ejabberd_hooks:run(
+		        	status_online_hook, 
+		        	StateData#state.server,
+					[
+						StateData#state.user,
+						    StateData#state.server
+					]
+			);
+			StateData#state{is_available = true};
+        _ ->  
+        	ok
+    end.
