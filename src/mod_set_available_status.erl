@@ -62,7 +62,6 @@ init([Host, Opts]) ->
     ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:add(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:add(user_started_sending_message, Host, ?MODULE, on_user_send_message, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     {ok, #state{host = Host}}.
@@ -71,7 +70,6 @@ terminate(_Reason, #state{host = Host}) ->
     ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:delete(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:delete(user_started_sending_message, Host, ?MODULE, on_user_send_message, 100),
     ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100).
 
@@ -111,9 +109,6 @@ start_link(Host, Opts) ->
     gen_server:start_link({local, Proc}, ?MODULE,
               [Host, Opts], []).
 
-
-on_user_send_message(C2SState, User, Server) -> 
-    set_available(User, Server).
 
 on_user_send_message(Packet, _C2SState, _, _) ->
     Packet.

@@ -86,13 +86,14 @@ start_link(Host, Opts) ->
                            [Host, Opts], []).
 
 init([Host, Opts]) ->
-  ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, on_unavailable_user_receiving_message, 50),
+  ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, handle_push_notification, 50),
   ReconnectionIntensity = gen_mod:get_opt(reconnection_intensity, Opts, fun(A) -> A end, false),
   ApnsConnectionName = apple_connection, 
     State = #state{
         host = Host,
         apns_connection_name = ApnsConnectionName,
-        opts = Opts
+        opts = Opts,
+        reconnection_intensity = ReconnectionIntensity
     },
     timer:apply_after(1000, ?MODULE, start_connection, [State]),
    {ok, State}.
@@ -100,7 +101,7 @@ init([Host, Opts]) ->
 
 terminate(_Reason, State) ->
     Host = State#state.host,
-    ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, on_unavailable_user_receiving_message, 50),
+    ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, handle_push_notification, 50),
     ok.
 
 
@@ -192,13 +193,14 @@ flush_queue(#state{notification_queue = NotificationQueue, apns_connection_name 
     ).
 
 start_connection(#state{opts = Opts, apns_connection_name = ApnsConnectionName} = State) ->
+    apns:start(),
     ?INFO_MSG(" ~n Starting apns connection ~n ", []),
     case apns:connect(
         ApnsConnectionName,
         get_apns_connection_info(Opts)
     ) of 
         {error, nxdomain} ->
-            ?ERROR_MSG(" Got nxdomain error in mod_apple_push ", []),
+            ?INFO_MSG(" Got nxdomain error in mod_apple_push ", []),
             #state{reconnection_intensity = ReconnectionIntensity} = State, 
             timer:apply_after(ReconnectionIntensity, ?MODULE, start_connection,
                 [State]);

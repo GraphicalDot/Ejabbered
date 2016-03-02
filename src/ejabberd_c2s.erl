@@ -1211,7 +1211,6 @@ session_established2(El, OldStateData) ->
 			ok
 	end,
 
-
     #xmlel{name = Name, attrs = Attrs} = El,
     NewStateData = update_num_stanzas_in(StateData, El),
     User = NewStateData#state.user,
@@ -1276,33 +1275,29 @@ session_established2(El, OldStateData) ->
 				 NewEl0 = ejabberd_hooks:run_fold(
 					    user_send_packet, Server, NewEl,
 					    [NewStateData, FromJID, ToJID]),
-				 check_privacy_route(FromJID, NewStateData,
-						     FromJID, ToJID, NewEl0)
+				 Data = check_privacy_route(FromJID, NewStateData,
+						     FromJID, ToJID, NewEl0),
+				 case xml:get_subtag(El, <<"ping">>) of
+				 	false ->
+				 		Data;
+				 	_ ->
+				 		cancel_timer(Data#state.set_offline_tref),
+					 	Data#state{set_offline_tref = add_timer(self()), is_available = true}
 			   end;
 		       <<"message">> ->
-			        case NewStateData#state.is_available of
-				    	false -> 
-		    				ejabberd_hooks:run(
-		    					user_started_sending_message,
-		    					StateData#state.server,
-		    					[NewStateData#state.user, NewStateData#state.server]
-		    				);
-						_ ->
-							ok
-					end,
-			   NewEl0 = ejabberd_hooks:run_fold(
-				      user_send_packet, Server, NewEl,
-				      [NewStateData, FromJID, ToJID]),
-			   Data = check_privacy_route(FromJID, NewStateData, FromJID,
-					       ToJID, NewEl0),
-			   Data#state{is_available = true};
+				   NewEl0 = ejabberd_hooks:run_fold(
+					      user_send_packet, Server, NewEl,
+					      [NewStateData, FromJID, ToJID]),
+				   Data = check_privacy_route(FromJID, NewStateData, FromJID,
+						       ToJID, NewEl0),
+				   cancel_timer(Data#state.set_offline_tref),
+				   Data#state{is_available = true, set_offline_tref = add_timer(self())};
 		       _ -> NewStateData
 		     end
 	       end,
     ejabberd_hooks:run(c2s_loop_debug,
 		       [{xmlstreamelement, El}]),
-	UpdatedAvailabilityState = NewState#state{is_available = true},
-    fsm_next_state(session_established, UpdatedAvailabilityState).
+    fsm_next_state(session_established, NewState).
 
 wait_for_resume({xmlstreamelement, _El} = Event, StateData) ->
     session_established(Event, StateData),
@@ -1338,7 +1333,7 @@ wait_for_resume(Event, StateData) ->
 handle_event(set_unavailable, StateName, StateData) -> 
 	PresencePacket = #xmlel{
 		name = <<"presence">>,
-		attrs = [{<<"type">>, <<"unavailable">>}],
+		attrs = [{<<"type">>, <<"available">>}],
 		children = [
 			#xmlel{
 				name = <<"status">>,
@@ -1818,6 +1813,11 @@ handle_info({broadcast, Type, From, Packet}, StateName, StateData) ->
 		From, jlib:make_jid(USR), Packet)
       end, lists:usort(Recipients)),
     fsm_next_state(StateName, StateData);
+
+handle_info(set_unavailable, StateName, StateData) ->
+	set_unavailable(self());
+		
+
 handle_info(Info, StateName, StateData) ->
     ?ERROR_MSG("Unexpected info: ~p", [Info]),
     fsm_next_state(StateName, StateData).
@@ -3223,6 +3223,7 @@ run_change_presence_hook(StateData, Packet) ->
 					    StateData#state.server
 				]
 			),
+			cancel_timer(StateData#state.set_offline_tref),
 			StateData#state{is_available = false};
         <<"Online">> ->
 	        ejabberd_hooks:run(
@@ -3233,7 +3234,18 @@ run_change_presence_hook(StateData, Packet) ->
 						    StateData#state.server
 					]
 			),
-			StateData#state{is_available = true};
+			StateData#state{is_available = true, set_offline_tref = add_timer(self())};
         _ ->  
         	StateData
     end.
+
+
+cancel_timer(Tref) ->
+	case timer:cancel(Tref) of
+		_ ->
+			ok
+	end.
+
+add_timer(FsmRef) ->
+	{ok, Tref} = timer:send_after(?OFFLINETIMEOUT, FsmRef, set_unavailable),
+	Tref.

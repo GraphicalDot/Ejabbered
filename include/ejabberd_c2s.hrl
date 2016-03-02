@@ -17,6 +17,8 @@
 
 -include("mod_privacy.hrl").
 
+-define(OFFLINETIMEOUT, 30000).
+
 -record(state, {socket,
 		sockmod,
 		socket_monitor,
@@ -58,4 +60,6 @@
 		lang = <<"">>,
 		is_available = true,
 		has_saved_messages = true,
-		apple_udid}).
+		apple_udid = none,
+		set_offline_tref
+		}).
