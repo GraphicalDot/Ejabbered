@@ -1283,7 +1283,8 @@ session_established2(El, OldStateData) ->
 				 	_ ->
 				 		cancel_timer(Data#state.set_offline_tref),
 					 	Data#state{set_offline_tref = add_timer(self()), is_available = true}
-			   end;
+			   	  end
+				end;
 		       <<"message">> ->
 				   NewEl0 = ejabberd_hooks:run_fold(
 					      user_send_packet, Server, NewEl,
