@@ -60,7 +60,7 @@ send_user_unreceived_messages(JID) ->
     mnesia:delete(unreceived_message, User, write)
   end,
     case mnesia:transaction(F) of
-      {atomic, UnreceivedMessages} ->
+      {atomic, UnreceivedMessages} when is_list(UnreceivedMessages) ->
           lists:foreach(
             fun(#unreceived_message{packet = El}) ->
                       #xmlel{attrs = Attrs} = El,

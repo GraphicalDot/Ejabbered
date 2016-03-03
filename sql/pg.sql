@@ -95,6 +95,9 @@ CREATE TABLE rosterusers (
     jid text NOT NULL,
     nick text NOT NULL,
     subscription character(1) NOT NULL,
+    ask character(1) NOT NULL,
+    askmessage text NOT NULL,
+    server character(1) NOT NULL,
     subscribe text,
     "type" text,
     created_at TIMESTAMP NOT NULL DEFAULT now()

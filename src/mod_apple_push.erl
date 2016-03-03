@@ -19,8 +19,6 @@
 -export([handle_push_notification/3,
         handle_error/2, 
         handle_app_deletion/1, 
-        on_user_going_offline/4,
-        on_user_coming_online/1,
         start_connection/1]).
 
 
@@ -41,7 +39,6 @@
 
 -record(state,{host = <<"">> : binary(),
         apns_connection_name :: atom(), 
-        ios_offline_users = (?DICT):new(),
         opts,
         notification_queue = queue:new(), 
         is_connected = false,
@@ -71,28 +68,14 @@ stop(Host) ->
 %% hook callbacks
 %%====================================================================
 
-on_user_going_offline(User, Server, _Resource, _Status) ->
-    case get_udid_for_user(User, Server) of
-        {ok, null} ->
-            ?INFO_MSG(" Got no token for user ~p ", [User]),
+handle_push_notification(DeviceToken, Packet, #jid{luser = User, lserver = Server}) ->
+    case xml:get_subtag_cdata(Packet, <<"body">>) of 
+        <<>> ->
             ok;
-        {ok, Udid} ->
-            ?INFO_MSG(" Got token ~p for user ~p ", [Udid, User]),
-            case catch gen_server:call(?MODULE, {add_user_to_notification_list, User, Udid}) of
-                {'EXIT', {timeout, _}} ->
-                    ok
-            end;
-        _ -> 
-            ok
-    end,
-    ok.
-
-
-on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
-    case catch gen_server:call(?MODULE, {remove_user_from_notification_list, User}) of
-        {'EXIT', {timeout, _}} -> ok
+        Body ->
+            Notification = <<" You received a message ">>,
+            notify(User, Notification, DeviceToken)
     end.
-
 
 %%====================================================================
 %% gen_server callbacks
@@ -103,15 +86,14 @@ start_link(Host, Opts) ->
                            [Host, Opts], []).
 
 init([Host, Opts]) ->
-  ejabberd_hooks:add(offline_message_hook, Host, ?MODULE, handle_push_notification, 50),
-  ejabberd_hooks:add(unset_presence_hook, Host, ?MODULE, on_user_going_offline, 50),
-  ejabberd_hooks:add(user_available_hook, Host, ?MODULE, on_user_coming_online, 50),
+  ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, handle_push_notification, 50),
   ReconnectionIntensity = gen_mod:get_opt(reconnection_intensity, Opts, fun(A) -> A end, false),
   ApnsConnectionName = apple_connection, 
     State = #state{
         host = Host,
         apns_connection_name = ApnsConnectionName,
-        opts = Opts
+        opts = Opts,
+        reconnection_intensity = ReconnectionIntensity
     },
     timer:apply_after(1000, ?MODULE, start_connection, [State]),
    {ok, State}.
@@ -119,9 +101,7 @@ init([Host, Opts]) ->
 
 terminate(_Reason, State) ->
     Host = State#state.host,
-    ejabberd_hooks:delete(offline_message_hook, Host, ?MODULE, handle_push_notification, 50),
-    ejabberd_hooks:delete(unset_presence_hook, Host, ?MODULE, on_user_going_offline, 50),
-    ejabberd_hooks:delete(user_available_hook, Host, ?MODULE, on_user_coming_online, 50),
+    ejabberd_hooks:add(apple_users_recieved_message, Host, ?MODULE, handle_push_notification, 50),
     ok.
 
 
@@ -133,61 +113,35 @@ terminate(_Reason, State) ->
 handle_cast(_Info, State) -> 
     {noreply, State}.
 
-handle_call({notify, Message, #jid{luser = User}} = JID,_From, #state{is_connected = false} = State) -> 
+handle_call({notify, Message, User, DeviceToken},_From, #state{is_connected = false} = State) -> 
     #state{
-        ios_offline_users = IosOfflineUsers, 
         apns_connection_name = ApnsConnectionName, 
         notification_queue = NotificationQueue
     } = State,
-    case (?DICT):find(User, IosOfflineUsers) of
-        error ->
-            ?INFO_MSG(" Got no saved token for user ~p while queuing ", [User]),
-            NewState = State;            
-        {ok, DeviceToken} ->
-            ?INFO_MSG(" Got  saved token ~p for user ~p while queuing ", [DeviceToken, User]),
-            NewState = State#state{
-                notification_queue = queue:in({Message, DeviceToken}, NotificationQueue), 
-                has_pending_notifications = true
-            }
-    end,
+    ?INFO_MSG(" Saving message using device_token ~p for user ~p while queuing ", [DeviceToken, User]),
+    NewState = State#state{
+        notification_queue = queue:in({Message, DeviceToken}, NotificationQueue), 
+        has_pending_notifications = true
+    },
     {noreply, NewState};
 
 handle_call(
-        {notify, Message, #jid{luser = User}},
+        {notify, Message, User, DeviceToken},
         _From, 
-        #state{has_pending_notifications = PStatus} = State
+        #state{has_pending_notifications = PStatus, apns_connection_name = ApnsConnectionName} = State
     ) -> 
     
     case PStatus of
         true ->
-            flush_queue(State);
+            flush_queue(State),
+            NewState = State#state{notification_queue = queue:new(), has_pending_notifications = false};
         _ ->
-            ok
+            NewState = State
     end,
-    #state{ios_offline_users = IosOfflineUsers, apns_connection_name = ApnsConnectionName} = State,
-    case (?DICT):find(User, IosOfflineUsers) of
-        error ->
-            ?INFO_MSG(" Got no saved token for user ~p while sending message ", [User]),
-            ok;            
-        {ok, DeviceToken} ->
-            ?INFO_MSG(" Got  saved token ~p for user ~p while sending message ", [DeviceToken, User]),
-            send_message(ApnsConnectionName, DeviceToken, Message)
-    end,
-    {noreply, State#state{notification_queue = queue:new(), has_pending_notifications = false}};
-
-
-handle_call({add_user_to_notification_list, User, IosDeviceId}, _From, State) ->
-    #state{ios_offline_users = IosOfflineUsers} = State,
-    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
-    NewDict = (?DICT):store(User, IosDeviceId, AlteredDict),
-    NewState = State#state{ios_offline_users = NewDict},    
+    ?INFO_MSG(" Sending message using device_token ~p for user ~p ", [DeviceToken, User]),
+    send_message(ApnsConnectionName, DeviceToken, Message),
     {noreply, NewState};
 
-handle_call({remove_user_from_notification_list, User}, _From, State) ->
-    #state{ios_offline_users = IosOfflineUsers} = State,
-    AlteredDict = (?DICT):erase(User, IosOfflineUsers),
-    NewState = State#state{ios_offline_users = AlteredDict},    
-    {noreply, NewState};
 
 handle_call(start_connection, _From, State) -> 
     spawn(?MODULE, start_connection, [State]),
@@ -229,19 +183,6 @@ handle_app_deletion(_) ->
 send_message(ApnsConnectionName, DeviceToken, Message) ->
     apns:send_message(ApnsConnectionName, #apns_msg{device_token = DeviceToken, alert = Message}).
 
-get_udid_for_user(User, Server) ->
-    case ejabberd_odbc:sql_query(
-       Server,
-       [<<"select apple_udid from users " >>, 
-            <<" where username  = ">>,
-            <<"'">>, User, <<"';">>]) of
-
-    {selected, _, [[Udid]]} -> 
-        {ok, Udid};
-    _ ->
-        false
-    end.
-
 flush_queue(#state{notification_queue = NotificationQueue, apns_connection_name = ApnsConnectionName} = State) ->
     NotificationList = queue:to_list(NotificationQueue),
     lists:foreach(
@@ -252,13 +193,14 @@ flush_queue(#state{notification_queue = NotificationQueue, apns_connection_name 
     ).
 
 start_connection(#state{opts = Opts, apns_connection_name = ApnsConnectionName} = State) ->
+    apns:start(),
     ?INFO_MSG(" ~n Starting apns connection ~n ", []),
     case apns:connect(
         ApnsConnectionName,
         get_apns_connection_info(Opts)
     ) of 
         {error, nxdomain} ->
-            ?ERROR_MSG(" Got nxdomain error in mod_apple_push ", []),
+            ?INFO_MSG(" Got nxdomain error in mod_apple_push ", []),
             #state{reconnection_intensity = ReconnectionIntensity} = State, 
             timer:apply_after(ReconnectionIntensity, ?MODULE, start_connection,
                 [State]);
@@ -271,19 +213,9 @@ start_connection(#state{opts = Opts, apns_connection_name = ApnsConnectionName} 
             Status
     end.
 
-handle_push_notification(From, To, Packet) ->
-    #jid{lserver = Server} = From,
-    case xml:get_subtag_cdata(Packet, <<"body">>) of 
-        <<>> ->
-            ok;
-        Body ->
-            Notification = <<" You received a message ">>,
-            notify(To, Notification, Server)
-    end,
-    Packet.
 
-notify(To, Message, Host) ->
-    case catch gen_server:call(?MODULE, {notify, Message, To}) of 
+notify(To, Message, DeviceToken) ->
+    case catch gen_server:call(?MODULE, {notify, Message, To, DeviceToken}) of 
         {'EXIT', {timeout, _}} -> ok
     end.
 
