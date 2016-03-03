@@ -574,7 +574,7 @@ language: "en"
 ## Modules enabled in all ejabberd virtual hosts.
 ##
 modules: 
-  mod_location: {}
+  mod_set_available_status: {}
   mod_muc: {}
   mod_mam:
     db_type: odbc
@@ -596,7 +596,6 @@ modules:
   mod_offline: 
     access_max_user_messages: max_user_offline_messages
     db_type: odbc
-  mod_ping: {}
   mod_privacy: 
     db_type: odbc
   mod_private: {}

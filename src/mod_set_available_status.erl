@@ -1,5 +1,5 @@
 %% name of module must match file name
--module(mod_location).
+-module(mod_set_available_status).
 
 -define(SUPERVISOR, ejabberd_sup).
 
@@ -18,11 +18,11 @@
      handle_cast/2, handle_info/2, code_change/3]).
 
 %% Hook callbacks
--export([on_user_presence_update/3, 
-        on_user_unregister_connection/3,
+-export([on_user_unregister_connection/3,
         on_user_register_connection/3,
         on_user_unavailable/2,
-        on_user_send_packet/4
+        on_user_available/2,
+        on_user_send_message/4
 ]).
 
 %% included for writing to ejabberd log file
@@ -59,17 +59,17 @@ stop(Host) ->
 %%==================================================
 
 init([Host, Opts]) ->
-    ejabberd_hooks:add(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
+    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:add(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:add(user_started_sending_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     {ok, #state{host = Host}}.
 
 terminate(_Reason, #state{host = Host}) ->
-    ejabberd_hooks:delete(c2s_update_presence, Host, ?MODULE, on_user_presence_update, 100),
+    ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
+    ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:delete(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:delete(user_started_sending_packet, Host, ?MODULE, on_user_send_packet, 100),
     ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
     ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100).
 
@@ -90,7 +90,7 @@ handle_cast({update_availability, User, Server, IsAvailabileStatus}, State) ->
         {updated, 1} -> 
             ok;
         Error -> 
-            ?ERROR_MSG(" Encountered error in mod_location ~p ~n ", [Error]) 
+            ?ERROR_MSG(" Encountered error in mod_set_available_status ~p ~n ", [Error]) 
     end,    
     {noreply, State};
 
@@ -110,27 +110,17 @@ start_link(Host, Opts) ->
               [Host, Opts], []).
 
 
-on_user_send_packet(C2SState, User, Server) -> 
-    set_available(User, Server).
-
-on_user_send_packet(Packet, _C2SState, _, _) ->
+on_user_send_message(Packet, _C2SState, _, _) ->
     Packet.
-
-on_user_presence_update(#xmlel{name = <<"presence">>} = Packet, User, Server) ->
-    case xml:get_subtag_cdata(Packet, <<"status">>) of
-        <<"Offline">> ->
-            set_unavailable(User, Server);
-        <<"Online">> ->
-            set_available(User, Server);
-        _ ->  ok
-    end,
-    Packet;
 
 on_user_presence_update(Packet, User, Server) -> 
     Packet.
 
 on_user_unavailable(User, Server) ->
     set_unavailable(User, Server).
+
+on_user_available(User, Server) ->
+    set_available(User, Server).
 
 on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
     set_unavailable(LUser, LServer);
