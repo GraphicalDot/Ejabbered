@@ -1816,7 +1816,8 @@ handle_info({broadcast, Type, From, Packet}, StateName, StateData) ->
     fsm_next_state(StateName, StateData);
 
 handle_info(set_unavailable, StateName, StateData) ->
-	set_unavailable(self());
+	set_unavailable(self()),
+    fsm_next_state(StateName, StateData);
 		
 
 handle_info(Info, StateName, StateData) ->
