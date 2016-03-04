@@ -50,7 +50,7 @@
 %%====================================================================
 
 start(Host, Opts) ->
-    mod_disco:register_feature(Host, ?NS_PING),
+    mod_disco:register_feature(Host, ?NS_PING).
 
 stop(Host) ->
     mod_disco:unregister_feature(Host, ?NS_PING).

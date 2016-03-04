@@ -682,7 +682,8 @@ modules:
   mod_vcard: 
     db_type: odbc 
   mod_version: {}
-  ##mod_stanza_ack: {}
+  mod_stanza_ack: {}
+  mod_ping: {}
   mod_proxy65: 
     host: "proxy.mm.io"
     name: "File Transfer Proxy"

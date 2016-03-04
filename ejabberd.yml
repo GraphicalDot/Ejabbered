@@ -618,6 +618,7 @@ modules:
   mod_vcard: {}
   mod_version: {}
   mod_stanza_ack: {}
+  mod_ping: {}
   mod_vcard_xupdate: {}
   mod_last_seen: {}
   mod_apple_push:
