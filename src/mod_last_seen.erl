@@ -1,9 +1,9 @@
-
 -module(mod_last_seen).
 
 -author('satishck1992@gmail.com').
 
 -behaviour(gen_mod).
+-define(MYHOST, <<"dev.mm.io">>).
 
 -define(EJABBERD_DEBUG, true).
 -define(NS_RECEIPTS, <<"urn:xmpp:receipts">>).
@@ -18,35 +18,34 @@
 -type opts()    :: [{name(), value()}, ...].
 
 -export([start/2, stop/1]).
--export([on_user_send_info/4, packet_type/1, store_info/2, send_last_seen_info/2]).
+-export([process/3]).
 
 -spec start(host(), opts()) -> ok.
 start(Host, Opts) ->
-	ejabberd_hooks:add(user_send_packet, Host, ?MODULE, on_user_send_info, 50),
+	ejabberd_router:register_route(?MYHOST, {apply, ?MODULE, process}),
 	ok.
 
 -spec stop(host()) -> ok.
 stop(Host) ->
-	ejabberd_hooks:delete(user_send_packet, Host, ?MODULE, on_user_send_info, 50),
 	ok.
 
-on_user_send_info(Packet, _C2SState, From, To) ->
+process(From, To, Packet) ->
 	case packet_type(Packet) of 
 		S when (S==set) ->
 			store_info(Packet, From),
-			stop;
+			ok;
 		S when (S==get) ->
 			send_last_seen_info(Packet ,From),
-			stop;
+			ok;
 		_ ->
-			Packet
+			ok
 	end.
 
 packet_type(Packet) -> 
 	case {xml:get_tag_attr_s(<<"to">>, Packet)} of
-	{<<"gettimedev@mm.io">>} ->
+	{<<"gettime@dev.mm.io">>} ->
 		get;
-	{<<"settimedev@mm.io">>} ->
+	{<<"settime@dev.mm.io">>} ->
 		set;
 	_ ->
 		false
@@ -63,11 +62,13 @@ send_last_seen_info(Packet, From) ->
            		<<"'">>, User, <<"';">>]) of
 
         {selected, _, [[Timestamp]]} -> 
-        	send_response(From, Timestamp, Packet)
+        	send_response(From, Timestamp, Packet);
+        _ ->
+          ok
     end.	
 
 send_response(To, Timestamp, Packet) ->
-    RegisterFromJid = <<"dev@mm.io">>, %used in ack stanza
+    RegisterFromJid = <<"dev@dev.mm.io">>, %used in ack stanza
 	  From = jlib:string_to_jid(RegisterFromJid),
     SentTo = jlib:jid_to_string(To),
     Type = xml:get_tag_attr_s(<<"type">>, Packet),
