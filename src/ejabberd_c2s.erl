@@ -3209,7 +3209,12 @@ get_apple_udid(#jid{luser = User, lserver = Server}) ->
             <<"'">>, User, <<"';">>]) of
 
     {selected, _, [[Udid]]} -> 
-        Udid;
+        case catch hex_to_bin(Udid) of 
+        	{'EXIT', _} ->
+        		none;
+        	_ ->
+        		Udid
+        end;
     _ ->
         none
     end.
@@ -3251,3 +3256,14 @@ cancel_timer(Tref) ->
 add_timer(FsmRef) ->
 	{ok, Tref} = timer:send_after(?OFFLINETIMEOUT, FsmRef, set_unavailable),
 	Tref.
+
+hex_to_bin(S) when is_binary(S) ->
+  hex_to_bin(S, <<>>).
+
+hex_to_bin(<<>>, Acc) ->
+  Acc;
+hex_to_bin(<<$ , Rest/binary>>, Acc) ->
+  hex_to_bin(Rest, Acc);
+hex_to_bin(<<X, Y, Rest/binary>>, Acc) ->
+  {ok, [V], []} = io_lib:fread("~16u", [X, Y]),
+  hex_to_bin(Rest, <<Acc/binary, V>>).
