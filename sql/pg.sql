@@ -73,9 +73,9 @@ CREATE TABLE registered_users (
 
 CREATE TABLE interest (
     interest_id SERIAL PRIMARY KEY ,
-    interest_name text UNIQUE NOT NULL,
-    interest_type_id  integer REFERENCES interest_type, 
-    interest_uid text UNIQUE 
+    interest_name text NOT NULL,
+    interest_type_id  integer REFERENCES interest_type ON DELETE RESTRICT, 
+    interest_uid text UNIQUE NOT NULL
 );
 
 CREATE TABLE interest_type (
