@@ -73,8 +73,16 @@ CREATE TABLE registered_users (
 
 CREATE TABLE interest (
     interest_id SERIAL PRIMARY KEY ,
-    interest_name text UNIQUE NOT NULL
+    interest_name text UNIQUE NOT NULL,
+    interest_type_id  integer REFERENCES interest_type, 
+    interest_uid text UNIQUE 
 );
+
+CREATE TABLE interest_type (
+    interest_type_id SERIAL PRIMARY KEY ,
+    interest_type text UNIQUE NOT NULL,
+);
+
 
 CREATE TABLE users_interest (
     interest_id integer REFERENCES interest ON DELETE CASCADE,
