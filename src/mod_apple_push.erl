@@ -80,6 +80,8 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
             ?INFO_MSG(" Got token ~p for user ~p ", [Udid, User]),
             case catch gen_server:call(?MODULE, {add_user_to_notification_list, User, Udid}) of
                 {'EXIT', {timeout, _}} ->
+                    ok;
+                _ ->
                     ok
             end;
         _ -> 
@@ -90,7 +92,10 @@ on_user_going_offline(User, Server, _Resource, _Status) ->
 
 on_user_coming_online(#jid{luser = User, lserver = Server} = JID) ->
     case catch gen_server:call(?MODULE, {remove_user_from_notification_list, User}) of
-        {'EXIT', {timeout, _}} -> ok
+        {'EXIT', {timeout, _}} -> 
+            ok;
+        _ ->
+            ok
     end.
 
 
@@ -211,6 +216,8 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 handle_error(MsgId, shutdown) ->
     case catch gen_server:call(?MODULE, start_connection) of 
         {'EXIT', {timeout, _}} ->
+            ok;
+        _ ->
             ok
     end,
   ok;
@@ -284,7 +291,10 @@ handle_push_notification(From, To, Packet) ->
 
 notify(To, Message, Host) ->
     case catch gen_server:call(?MODULE, {notify, Message, To}) of 
-        {'EXIT', {timeout, _}} -> ok
+        {'EXIT', {timeout, _}} -> 
+            ok;
+        _ ->
+            ok
     end.
 
 get_apns_connection_info(Opts) -> 
