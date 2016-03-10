@@ -56,8 +56,9 @@ init_db() ->
 send_user_unreceived_messages(JID) ->
   User = JID#jid.luser,
   F = fun () ->
-    mnesia:wread({unreceived_message, User}),
-    mnesia:delete(unreceived_message, User, write)
+    Rs = mnesia:wread({unreceived_message, User}),
+    mnesia:delete(unreceived_message, User, write),
+    Rs
   end,
     case mnesia:transaction(F) of
       {atomic, UnreceivedMessages} when is_list(UnreceivedMessages) ->
