@@ -3204,7 +3204,7 @@ opt_type(_) ->
 get_apple_udid(#jid{luser = User, lserver = Server}) ->
     case ejabberd_odbc:sql_query(
        Server,
-       [<<"select apple_udid from users " >>, 
+       [<<"select apple_token from users " >>, 
             <<" where username  = ">>,
             <<"'">>, User, <<"';">>]) of
 
