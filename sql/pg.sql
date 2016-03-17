@@ -28,7 +28,19 @@ CREATE TABLE users (
     last_seen text ,
     resume_id text,
     apple_udid text, 
+    android_udid text, 
+    device_id text, 
     is_available boolean
+);
+
+CREATE TABLE matches(
+    id text UNIQUE NOT NULL PRIMARY KEY,
+    name text NOT NULL
+);
+
+CREATE TABLE users_matches(
+    username text REFERENCES users ON DELETE CASCADE,
+    match_id text REFERENCES matches ON DELETE CASCADE
 );
 
 -- To support SCRAM auth:
