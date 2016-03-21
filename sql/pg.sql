@@ -27,10 +27,11 @@ CREATE TABLE users (
     fb_name text,
     last_seen text ,
     resume_id text,
-    apple_udid text, 
-    android_udid text, 
+    apple_token text, 
+    android_token text, 
     device_id text, 
-    is_available boolean
+    is_available boolean DEFAULT FALSE,
+    show_location boolean
 );
 
 CREATE TABLE matches(
@@ -42,6 +43,9 @@ CREATE TABLE users_matches(
     username text REFERENCES users ON DELETE CASCADE,
     match_id text REFERENCES matches ON DELETE CASCADE
 );
+
+
+CREATE INDEX i_users_matches ON users_matches USING btree (username, match_id);
 
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
@@ -84,8 +88,8 @@ CREATE TABLE registered_users (
 );
 
 CREATE TABLE interest (
-    interest_id SERIAL PRIMARY KEY ,
-    interest_name text UNIQUE NOT NULL
+    interest_id text PRIMARY KEY ,
+    interest_name text NOT NULL
 );
 
 CREATE TABLE users_interest (
@@ -94,6 +98,7 @@ CREATE TABLE users_interest (
     PRIMARY KEY (interest_id, username)
 );
 
+CREATE INDEX i_users_interest ON users_matches USING btree (username, interest_id);
 
 CREATE TABLE last (
     username text PRIMARY KEY,
