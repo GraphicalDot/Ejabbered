@@ -33,6 +33,7 @@ CREATE TABLE users (
     is_available boolean DEFAULT FALSE,
     show_location boolean
 );
+CREATE INDEX i_users_username ON users USING btree (username);
 
 CREATE TABLE matches(
     id text UNIQUE NOT NULL PRIMARY KEY,
@@ -45,7 +46,7 @@ CREATE TABLE users_matches(
 );
 
 
-CREATE INDEX i_users_matches ON users_matches USING btree (match_id, username);
+CREATE INDEX i_users_matches_match_id ON users_matches USING btree (match_id);
 
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
@@ -98,7 +99,7 @@ CREATE TABLE users_interest (
     PRIMARY KEY (interest_id, username)
 );
 
-CREATE INDEX i_users_interest ON users_matches USING btree (username, interest_id);
+CREATE INDEX i_users_interest_username ON users_matches USING btree (username);
 
 CREATE TABLE last (
     username text PRIMARY KEY,
