@@ -45,7 +45,7 @@ CREATE TABLE users_matches(
 );
 
 
-CREATE INDEX i_users_matches ON users_matches USING btree (username, match_id);
+CREATE INDEX i_users_matches ON users_matches USING btree (match_id, username);
 
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
