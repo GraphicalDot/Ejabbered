@@ -42,11 +42,13 @@ CREATE TABLE matches(
 
 CREATE TABLE users_matches(
     username text REFERENCES users ON DELETE CASCADE,
-    match_id text REFERENCES matches ON DELETE CASCADE
+    match_id text REFERENCES matches ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    
 );
 
 
-CREATE INDEX i_users_matches_match_id ON users_matches USING btree (match_id);
+CREATE INDEX i_users_matches_match_id ON users_matches USING btree (match_id, username);
 
 -- To support SCRAM auth:
 -- ALTER TABLE users ADD COLUMN serverkey text NOT NULL DEFAULT '';
@@ -85,7 +87,8 @@ CREATE TABLE registered_users (
     authorization_code text ,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     phone_number text NOT NULL, 
-    expiration_time bigint
+    expiration_time bigint,
+    gateway_reponse text
 );
 
 CREATE TABLE interest (
@@ -94,7 +97,7 @@ CREATE TABLE interest (
 );
 
 CREATE TABLE users_interest (
-    interest_id integer REFERENCES interest ON DELETE CASCADE,
+    interest_id text REFERENCES interest ON DELETE CASCADE,
     username text REFERENCES users ON DELETE CASCADE,
     PRIMARY KEY (interest_id, username)
 );
