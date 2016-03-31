@@ -575,7 +575,7 @@ language: "en"
 ## Modules enabled in all ejabberd virtual hosts.
 ##
 modules: 
-  ##mod_location: {}
+  mod_set_available_status: {}
   mod_mam:
     db_type: odbc
     default: always
@@ -617,7 +617,6 @@ modules:
   mod_offline: 
     access_max_user_messages: max_user_offline_messages
     db_type: odbc
-  mod_ping: {}
   ## mod_pres_counter:
   ##   count: 5
   ##   interval: 60
@@ -687,27 +686,19 @@ modules:
     acknowledging_id: "dev@dev.mm.io"
     included_hosts:
       - "mm.io"  
+  mod_ping: {}
   mod_proxy65: 
     host: "proxy.mm.io"
     name: "File Transfer Proxy"
   mod_vcard_xupdate: 
     db_type: odbc
   mod_last_seen: {}
-  mod_apple_push: {}
-    # apple_port: 
-    # cert: 
-    # cert_file: 
-    # key: 
-    # key_file: 
-    # cert_password: 
-    # timeout: 
-    # error_fun: 
-    # feedback_host: 
-    # feedback_port: 
-    # feedback_fun: 
-    # feedback_timeout: 
-    # expires_conn: 
-    # extra_ssl_opts: 
+  mod_apple_push: 
+    apple_host: "gateway.sandbox.push.apple.com"
+    apple_port: 2195 
+    cert_file: "/etc/ejabberd/apple_cert.pem" 
+    cert_password: "pushchatkey"
+    reconnection_intensity: 30000
   mod_send_unreceived_messages: {}
 ##
 ## Enable modules with custom options in a specific virtual host
