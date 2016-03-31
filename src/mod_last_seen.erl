@@ -78,15 +78,8 @@ send_response(To, Timestamp, Packet, User) ->
               		    children =
               			[#xmlel{name = <<"body">>,
               				attrs = [],
-              				children = [#xmlel{name = <<"jid">>,
-                                  attrs = [],
-                                  children = [{xmlcdata, User}]},
-                                  #xmlel{name = <<"timestamp">>,
-                                  attrs = [],
-                                  children = [{xmlcdata, Timestamp}]}
-                                  ]
-                            }
-                    ]
+              				children = [{xmlcdata, <<User/binary, <<"|">>/binary, Timestamp/binary>>}]
+                    }]
                     },
     ejabberd_router:route(From, To, XmlBody).
 

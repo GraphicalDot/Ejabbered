@@ -36,7 +36,7 @@
 ## 4: Info
 ## 5: Debug
 ##
-loglevel: 5 
+loglevel: 1 
 
 ##
 ## rotation: Describe how to rotate logs. Either size and/or date can trigger
