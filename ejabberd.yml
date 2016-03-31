@@ -36,7 +36,7 @@
 ## 4: Info
 ## 5: Debug
 ##
-loglevel: 3 
+loglevel: 5 
 
 ##
 ## rotation: Describe how to rotate logs. Either size and/or date can trigger
@@ -625,10 +625,10 @@ modules:
   mod_vcard_xupdate: {}
   mod_last_seen: {}
   mod_apple_push:
-    apple_host: "gateway.sandbox.push.apple.com"
+    apple_host: "gateway.push.apple.com"
     apple_port: 2195 
     cert_file: "/etc/ejabberd/apple_cert.pem" 
-    cert_password: "pushchatkey"
+    cert_password: "pushchat"
     reconnection_intensity: 30000
 ##
 ## Enable modules with custom options in a specific virtual host

@@ -205,7 +205,7 @@ start_connection(#state{opts = Opts, apns_connection_name = ApnsConnectionName} 
             timer:apply_after(ReconnectionIntensity, ?MODULE, start_connection,
                 [State]);
         {error, Reason} ->
-            ?INFO_MSG(" ~n Error starting connection ~n  stopping server", [Reason]),
+            ?INFO_MSG(" ~n Error starting connection ~p  stopping server ", [Reason]),
             gen_server:call(?MODULE, stop);
         Status ->
             ?INFO_MSG(" ~n Started apns connection ~n ", []),
