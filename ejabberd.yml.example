@@ -694,7 +694,7 @@ modules:
     db_type: odbc
   mod_last_seen: {}
   mod_apple_push: 
-    apple_host: "gateway.sandbox.push.apple.com"
+    apple_host: "gateway.push.apple.com"
     apple_port: 2195 
     cert_file: "/etc/ejabberd/apple_cert.pem" 
     cert_password: "pushchatkey"

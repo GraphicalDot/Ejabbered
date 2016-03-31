@@ -2602,7 +2602,14 @@ get_affiliations(Host, Node, JID) ->
 	    Features = plugin_features(Host, Type),
 	    RetrieveFeature = lists:member(<<"modify-affiliations">>, Features),
 	    {result, Affiliation} = node_call(Host, Type, get_affiliation, [Nidx, JID]),
-		node_call(Host, Type, get_node_affiliations, [Nidx])
+		if not RetrieveFeature ->
+		    {error,
+			extended_error(?ERR_FEATURE_NOT_IMPLEMENTED, unsupported, <<"modify-affiliations">>)};
+		Affiliation == owner orelse Affiliation == publisher ->
+		    node_call(Host, Type, get_node_affiliations, [Nidx]);
+		true ->
+		    {error, ?ERR_FORBIDDEN}
+	    end
     end,
     case transaction(Host, Node, Action, sync_dirty) of
 	{result, {_, []}} ->
@@ -3746,7 +3753,7 @@ set_configure(Host, Node, From, Els, Lang) ->
 		{?NS_XDATA, <<"submit">>} ->
 		    Action = fun (#pubsub_node{options = Options, type = Type, id = Nidx} = N) ->
 			    case node_call(Host, Type, get_affiliation, [Nidx, From]) of
-				{result, owner} ->
+				{result, Affiliation} when Affiliation == owner orelse Affiliation == publisher ->
 				    case jlib:parse_xdata_submit(XEl) of
 					invalid ->
 					    {error, ?ERR_BAD_REQUEST};
