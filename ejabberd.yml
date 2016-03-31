@@ -617,7 +617,10 @@ modules:
   mod_time: {}
   mod_vcard: {}
   mod_version: {}
-  mod_stanza_ack: {}
+  mod_stanza_ack: 
+    acknowledging_id: "dev@dev.mm.io"
+    included_hosts:
+      - "mm.io"  
   mod_ping: {}
   mod_vcard_xupdate: {}
   mod_last_seen: {}

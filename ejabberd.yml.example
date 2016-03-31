@@ -682,7 +682,10 @@ modules:
   mod_vcard: 
     db_type: odbc 
   mod_version: {}
-  mod_stanza_ack: {}
+  mod_stanza_ack: 
+    acknowledging_id: "dev@dev.mm.io"
+    included_hosts:
+      - "mm.io"  
   mod_ping: {}
   mod_proxy65: 
     host: "proxy.mm.io"
