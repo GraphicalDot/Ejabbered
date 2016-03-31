@@ -62,23 +62,32 @@ send_last_seen_info(Packet, From) ->
            		<<"'">>, User, <<"';">>]) of
 
         {selected, _, [[Timestamp]]} -> 
-        	send_response(From, Timestamp, Packet);
+        	send_response(From, Timestamp, Packet, User);
         _ ->
           ok
     end.	
 
-send_response(To, Timestamp, Packet) ->
+send_response(To, Timestamp, Packet, User) ->
     RegisterFromJid = <<"dev@dev.mm.io">>, %used in ack stanza
 	  From = jlib:string_to_jid(RegisterFromJid),
     SentTo = jlib:jid_to_string(To),
     Type = xml:get_tag_attr_s(<<"type">>, Packet),
 
     XmlBody = #xmlel{name = <<"message">>,
-              		    attrs = [{<<"from">>, To}, {<<"to">>, To}, {<<"type">>, Type}],
+              		    attrs = [{<<"from">>, RegisterFromJid}, {<<"to">>, To}, {<<"type">>, Type}],
               		    children =
               			[#xmlel{name = <<"body">>,
               				attrs = [],
-              				children = [{xmlcdata, Timestamp}]}]},
+              				children = [#xmlel{name = <<"jid">>,
+                                  attrs = [],
+                                  children = [{xmlcdata, User}]},
+                                  #xmlel{name = <<"timestamp">>,
+                                  attrs = [],
+                                  children = [{xmlcdata, Timestamp}]}
+                                  ]
+                            }
+                    ]
+                    },
     ejabberd_router:route(From, To, XmlBody).
 
 store_info(Packet, From) ->
