@@ -31,6 +31,7 @@ CREATE TABLE users (
     android_token text, 
     device_id text, 
     is_available boolean DEFAULT FALSE,
+    is_banned boolean DEFAULT FALSE,
     show_location boolean
 );
 CREATE INDEX i_users_username ON users USING btree (username);
@@ -43,8 +44,7 @@ CREATE TABLE matches(
 CREATE TABLE users_matches(
     username text REFERENCES users ON DELETE CASCADE,
     match_id text REFERENCES matches ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    
+    created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX i_users_matches_match_id ON users_matches USING btree (match_id, username);
@@ -87,13 +87,21 @@ CREATE TABLE registered_users (
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     phone_number text NOT NULL, 
     expiration_time bigint,
-    gateway_reponse text
+    gateway_response text
+);
+CREATE TABLE interest_type (
+    interest_type_id SERIAL PRIMARY KEY ,
+    interest_type_name text UNIQUE NOT NULL
 );
 
 CREATE TABLE interest (
     interest_id text PRIMARY KEY ,
-    interest_name text NOT NULL
+    interest_name text NOT NULL,
+    interest_type_id integer REFERENCES interest_type
 );
+
+
+
 
 CREATE TABLE users_interest (
     interest_id text REFERENCES interest ON DELETE CASCADE,

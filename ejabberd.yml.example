@@ -585,11 +585,6 @@ modules:
     access: announce
   mod_blocking: {} # requires mod_privacy
   mod_caps: {}
-  mod_muc:
-    history_size: 0
-    max_users: 10000
-    db_type: odbc
-  mod_carboncopy: {}
   mod_client_state:
     drop_chat_states: true
     queue_presence: false
