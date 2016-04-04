@@ -90,11 +90,8 @@ init([Host, Opts]) ->
 handle_info(_Info, State) ->
     ?ERROR_MSG("got unexpected info: ~p", [_Info]),
     {noreply, State}.
-handle_cast(_Info, State) ->
-    ?ERROR_MSG("got unexpected info: ~p", [_Info]),
-    {noreply, State}.
 
-handle_call({acknowledge, Packet, From, To}, _From, State) -> 
+handle_cast({acknowledge, Packet, From, To}, State) -> 
     case should_acknowledge(Packet, State, To) of 
         S when (S==true) ->
             RegisterToJid = From, %used in ack stanza
@@ -103,6 +100,11 @@ handle_call({acknowledge, Packet, From, To}, _From, State) ->
             ok
     end,
     {noreply, State};
+
+handle_cast(_Info, State) ->
+    ?ERROR_MSG("got unexpected info: ~p", [_Info]),
+    {noreply, State}.
+
 
 handle_call(stop, _From, State) -> 
   {stop, normal, ok, State}.
@@ -117,12 +119,7 @@ terminate(_Reason, State) ->
 %% ====================================================================
 
 on_user_send_packet(Packet, _C2SState, From, To) ->
-    case catch gen_server:call(?MODULE, {acknowledge, Packet, From, To}) of 
-        {'EXIT', {timeout, _}} -> 
-            ok;
-        _ ->
-            ok
-    end,
+    gen_server:cast(?MODULE, {acknowledge, Packet, From, To}),
     Packet.
 
 should_acknowledge(#xmlel{name = <<"message">>} = Packet, #state{included_hosts = IncludedHosts} = State, #jid{lserver = LServer}  = To) ->
