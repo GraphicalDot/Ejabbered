@@ -3204,9 +3204,9 @@ opt_type(_) ->
 get_apple_udid(#jid{luser = User, lserver = Server}) ->
     case ejabberd_odbc:sql_query(
        Server,
-       [<<"select apple_token from users " >>, 
+       [<<"select device_token from users " >>, 
             <<" where username  = ">>,
-            <<"'">>, User, <<"';">>]) of
+            <<"'">>, User, <<"' and token_type = 'i';">>]) of
 
     {selected, _, [[Udid]]} -> 
         case catch hex_to_bin(Udid) of 

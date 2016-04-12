@@ -346,9 +346,9 @@ auth_method: odbc
 ##
 odbc_type: pgsql
 odbc_server: "masterdb"
-odbc_database: "test_database"
-odbc_username: "aakarshi"
-odbc_password: "aakarshi"
+odbc_database: "production_db"
+odbc_username: "madmachines"
+odbc_password: "password_production_db"
 odbc_port: 5432
 ##
 ## If you want to specify the port:
@@ -574,6 +574,7 @@ language: "en"
 ## Modules enabled in all ejabberd virtual hosts.
 ##
 modules: 
+  mod_send_unreceived_messages: {}
   mod_set_available_status: {}
   mod_muc: {}
   mod_mam:
