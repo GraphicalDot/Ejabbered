@@ -27,18 +27,27 @@ CREATE TABLE users (
     fb_name text,
     last_seen text ,
     resume_id text,
-    apple_token text, 
-    android_token text, 
+    device_token text,
+    token_type char,
     device_id text, 
     is_available boolean DEFAULT FALSE,
     is_banned boolean DEFAULT FALSE,
-    show_location boolean
+    show_location boolean,
+    name text 
 );
 CREATE INDEX i_users_username ON users USING btree (username);
 
 CREATE TABLE matches(
     id text UNIQUE NOT NULL PRIMARY KEY,
     name text NOT NULL
+);
+
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY, 
+    notification text,
+    apns_response text,
+    gcm_response text,
+    created_at TIMESTAMP DEFAULT now()
 );
 
 CREATE TABLE users_matches(
