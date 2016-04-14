@@ -181,7 +181,7 @@ handle_app_deletion(_) ->
 %% server internal functions
 %%====================================================================
 send_message(ApnsConnectionName, DeviceToken, Message) ->
-    apns:send_message(ApnsConnectionName, #apns_msg{device_token = DeviceToken, alert = Message}).
+    apns:send_message(ApnsConnectionName, #apns_msg{device_token = DeviceToken, alert = Message, sound = <<"default">>}).
 
 flush_queue(#state{notification_queue = NotificationQueue, apns_connection_name = ApnsConnectionName} = State) ->
     NotificationList = queue:to_list(NotificationQueue),
