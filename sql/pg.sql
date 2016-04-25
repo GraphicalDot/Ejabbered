@@ -43,10 +43,11 @@ CREATE TABLE matches(
 );
 
 CREATE TABLE notifications (
-    id SERIAL PRIMARY KEY, 
-    notification text,
+    id SERIAL PRIMARY KEY,
+    match_id text, 
+    notification json,
     apns_response text,
-    gcm_response text,
+    gcm_response json,
     created_at TIMESTAMP DEFAULT now()
 );
 
