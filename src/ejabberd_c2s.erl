@@ -3062,7 +3062,8 @@ inherit_session_state(#state{user = U, server = S} = StateData, ResumeID) ->
 					   mgmt_stanzas_in = OldStateData#state.mgmt_stanzas_in,
 					   mgmt_stanzas_out = OldStateData#state.mgmt_stanzas_out,
 					   apple_udid = OldStateData#state.apple_udid,
-					   mgmt_state = active}};
+					   mgmt_state = active,
+					   has_saved_messages = false}};
 		  {error, Msg} ->
 		      {error, Msg};
 		  _ ->
