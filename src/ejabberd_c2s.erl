@@ -299,7 +299,8 @@ init([{SockMod, Socket}, Opts]) ->
 		       mgmt_state = StreamMgmtState,
 		       mgmt_max_queue = MaxAckQueue,
 		       mgmt_timeout = ResumeTimeout,
-		       mgmt_resend = ResendOnTimeout},
+		       mgmt_resend = ResendOnTimeout,
+		       has_saved_messages = true},
     {ok, wait_for_stream, StateData, ?C2S_OPEN_TIMEOUT}.
 
 %% Return list of all available resources of contacts,
@@ -3063,7 +3064,7 @@ inherit_session_state(#state{user = U, server = S} = StateData, ResumeID) ->
 					   mgmt_stanzas_out = OldStateData#state.mgmt_stanzas_out,
 					   apple_udid = OldStateData#state.apple_udid,
 					   mgmt_state = active,
-					   has_saved_messages = false}};
+					   has_saved_messages = OldStateData#state.has_saved_messages}};
 		  {error, Msg} ->
 		      {error, Msg};
 		  _ ->
