@@ -1,3 +1,7 @@
 *.beam
 deps/
 ebin/
+Makefile
+config.log
+config.status
+vars.config

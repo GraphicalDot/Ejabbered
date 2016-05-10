@@ -679,7 +679,8 @@ check_existing_resources(LUser, LServer, LResource) ->
        true ->
 	   MaxSID = lists:max(SIDs),
 	   lists:foreach(fun ({_, Pid} = S) when S /= MaxSID ->
-				 Pid ! replaced;
+			Pid ! replaced;
+
 			     (_) -> ok
 			 end,
 			 SIDs)
@@ -702,7 +703,21 @@ check_max_sessions(LUser, LServer) ->
     SIDs = [S#session.sid || S <- Mod:get_sessions(LUser, LServer)],
     MaxSessions = get_max_user_sessions(LUser, LServer),
     if length(SIDs) =< MaxSessions -> ok;
-       true -> {_, Pid} = lists:min(SIDs), Pid ! replaced
+       true -> 
+            {_, Pid} = lists:min(SIDs), 
+            case erlang:process_info(Pid, [status]) of
+                undefined ->
+                    ok;
+                _ -> 
+                    ejabberd_hooks:run(
+                            user_session_replace_hook, 
+                            LServer,
+                            [
+                                LUser
+                            ]
+                    )
+            end,
+            Pid ! replaced
     end.
 
 %% Get the user_max_session setting
