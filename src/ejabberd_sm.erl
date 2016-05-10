@@ -679,7 +679,14 @@ check_existing_resources(LUser, LServer, LResource) ->
        true ->
 	   MaxSID = lists:max(SIDs),
 	   lists:foreach(fun ({_, Pid} = S) when S /= MaxSID ->
-				 Pid ! replaced;
+				Pid ! replaced,
+                ejabberd_hooks:run(
+                    user_session_replace_hook, 
+                    LServer,
+                    [
+                        LUser
+                    ]
+                );
 			     (_) -> ok
 			 end,
 			 SIDs)
