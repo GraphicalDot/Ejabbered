@@ -3540,7 +3540,7 @@ user_resource(_, _, Resource) ->
 get_configure(Host, ServerHost, Node, From, Lang) ->
     Action = fun (#pubsub_node{options = Options, type = Type, id = Nidx}) ->
 	    case node_call(Host, Type, get_affiliation, [Nidx, From]) of
-		{result, owner} ->
+		{result, Affiliation} when Affiliation == owner orelse Affiliation == publisher ->
 		    Groups = ejabberd_hooks:run_fold(roster_groups, ServerHost, [], [ServerHost]),
 		    {result,
 			[#xmlel{name = <<"pubsub">>,
