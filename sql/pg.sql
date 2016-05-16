@@ -47,7 +47,8 @@ CREATE TABLE notifications (
     notification text,
     apns_response text,
     gcm_response text,
-    created_at TIMESTAMP DEFAULT now()
+    created_at TIMESTAMP DEFAULT now(),
+    match_id text
 );
 
 CREATE TABLE users_matches(

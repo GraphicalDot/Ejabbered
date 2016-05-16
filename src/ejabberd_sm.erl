@@ -124,6 +124,7 @@ route(From, To, Packet) ->
 -spec open_session(sid(), binary(), binary(), binary(), prio(), info()) -> ok.
 
 open_session(SID, User, Server, Resource, Priority, Info) ->
+    check_for_open_sessions(User, Server),
     set_session(SID, User, Server, Resource, Priority, Info),
     check_for_sessions_to_replace(User, Server, Resource),
     JID = jlib:make_jid(User, Server, Resource),
@@ -134,6 +135,21 @@ open_session(SID, User, Server, Resource, Priority, Info) ->
 
 open_session(SID, User, Server, Resource, Info) ->
     open_session(SID, User, Server, Resource, undefined, Info).
+
+check_for_open_sessions(User, Server) ->
+    Mod = get_sm_backend(),
+    SIDs = [S#session.sid || S <- Mod:get_sessions(User, Server)],
+    MaxSessions = get_max_user_sessions(User, Server),
+    if length(SIDs) < MaxSessions -> ok;
+       true -> 
+            ejabberd_hooks:run(
+                    user_session_replace_hook, 
+                    Server,
+                    [
+                        User
+                    ]
+            )
+    end.
 
 -spec close_session(sid(), binary(), binary(), binary()) -> ok.
 
@@ -679,7 +695,8 @@ check_existing_resources(LUser, LServer, LResource) ->
        true ->
 	   MaxSID = lists:max(SIDs),
 	   lists:foreach(fun ({_, Pid} = S) when S /= MaxSID ->
-				 Pid ! replaced;
+			Pid ! replaced;
+
 			     (_) -> ok
 			 end,
 			 SIDs)
@@ -702,7 +719,9 @@ check_max_sessions(LUser, LServer) ->
     SIDs = [S#session.sid || S <- Mod:get_sessions(LUser, LServer)],
     MaxSessions = get_max_user_sessions(LUser, LServer),
     if length(SIDs) =< MaxSessions -> ok;
-       true -> {_, Pid} = lists:min(SIDs), Pid ! replaced
+       true -> 
+            {_, Pid} = lists:min(SIDs), 
+            Pid ! replaced
     end.
 
 %% Get the user_max_session setting

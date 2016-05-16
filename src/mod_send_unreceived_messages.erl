@@ -26,7 +26,8 @@
 -export([
     send_user_unreceived_messages/1, 
     handle_unreceived_messages/2, 
-    delete_saved_unreceived_messages/2  
+    delete_saved_unreceived_messages/2, 
+    delete_all_saved_unreceived_messages/1 
     ]).
 
 start(Host, Opts) ->
@@ -35,12 +36,14 @@ start(Host, Opts) ->
   ejabberd_hooks:add(user_new_session_start, Host, ?MODULE, send_user_unreceived_messages, 10),
   ejabberd_hooks:add(mgmt_queue_add_hook, Host, ?MODULE, handle_unreceived_messages, 10),
   ejabberd_hooks:add(user_packet_confirmation_hook, Host, ?MODULE, delete_saved_unreceived_messages, 10),
+  ejabberd_hooks:add(user_session_replace_hook, Host, ?MODULE, delete_all_saved_unreceived_messages, 10),
   ok.
 
 stop(Host) ->
   ejabberd_hooks:delete(user_new_session_start, Host, ?MODULE, send_user_unreceived_messages, 10),
   ejabberd_hooks:delete(mgmt_queue_add_hook, Host, ?MODULE, handle_unreceived_messages, 10),
   ejabberd_hooks:delete(user_packet_confirmation_hook, Host, ?MODULE, delete_saved_unreceived_messages, 10),
+  ejabberd_hooks:add(user_session_replace_hook, Host, ?MODULE, delete_all_saved_unreceived_messages, 10),
   ok.
 
 %% ====================================================================
@@ -144,8 +147,7 @@ delete_saved_unreceived_messages(StateData, HCount) ->
         ?INFO_MSG(" ~n Message couldn't be deleted, and no failback specified ~n ", [])
     end.
 
-delete_all_saved_unreceived_messages(JID) ->
-  User = JID#jid.luser,
+delete_all_saved_unreceived_messages(User) ->
   Q = fun() ->
     mnesia:delete(unreceived_message, User, write)
   end,
