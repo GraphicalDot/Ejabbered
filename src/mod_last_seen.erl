@@ -86,7 +86,7 @@ send_response(To, Timestamp, Packet, User) ->
 store_info(Packet, From) ->
     Username = From#jid.luser,
     LServer = From#jid.lserver,
-    Timestamp = xml:get_subtag_cdata(Packet, <<"body">>),
+    Timestamp = erlang:integer_to_binary(erlang:system_time(seconds)),
     ejabberd_odbc:sql_query(LServer,[<<"update users set last_seen = ">>,
     								<<"'">>, Timestamp, <<"'">>,
     								<<" where username='">>,

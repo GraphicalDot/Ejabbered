@@ -33,14 +33,30 @@ CREATE TABLE users (
     is_available boolean DEFAULT FALSE,
     is_banned boolean DEFAULT FALSE,
     show_location boolean,
-    name text 
+    name text,
+    referral_code text
 );
 CREATE INDEX i_users_username ON users USING btree (username);
+
+
 
 CREATE TABLE matches(
     id text UNIQUE NOT NULL PRIMARY KEY,
     name text NOT NULL
 );
+
+ CREATE TABLE coupons (
+    code TEXT PRIMARY KEY, 
+    created_at TIMESTAMP DEFAULT now(), 
+    coupon_limit integer NOT NULL,
+    used_count integer NOT NULL DEFAULT 0 
+);
+
+CREATE TABLE referrals (
+    username TEXT PRIMARY KEY REFERENCES users ON DELETE CASCADE , 
+    created_at TIMESTAMP DEFAULT now(), 
+    referred_by TEXT NOT NULL
+)
 
 CREATE TABLE notifications (
     id SERIAL PRIMARY KEY, 
