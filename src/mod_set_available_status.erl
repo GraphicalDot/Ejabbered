@@ -63,15 +63,13 @@ init([Host, Opts]) ->
     ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:add(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:add(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
-    ejabberd_hooks:add(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100),
     {ok, #state{host = Host}}.
 
 terminate(_Reason, #state{host = Host}) ->
     ejabberd_hooks:add(status_offline_hook, Host, ?MODULE, on_user_unavailable, 100),
     ejabberd_hooks:add(status_online_hook, Host, ?MODULE, on_user_available, 100),
     ejabberd_hooks:delete(user_unavailable_hook, Host, ?MODULE, on_user_unavailable, 100),
-    ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100),
-    ejabberd_hooks:delete(sm_register_connection_hook, Host, ?MODULE, on_user_register_connection, 100).
+    ejabberd_hooks:delete(sm_remove_connection_hook, Host, ?MODULE, on_user_unregister_connection, 100).
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
