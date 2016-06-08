@@ -1282,8 +1282,14 @@ session_established2(El, OldStateData) ->
 				 	false ->
 				 		Data;
 				 	_ ->
-				 		cancel_timer(Data#state.set_offline_tref),
-					 	Data#state{set_offline_tref = add_timer(self()), is_available = true}
+				 		case Data#state.is_available of
+				 			false ->
+				 				Data;
+				 			true ->
+						 		cancel_timer(Data#state.set_offline_tref),
+							 	Data#state{set_offline_tref = add_timer(self())}
+						end
+
 			   	  end
 				end;
 		       <<"message">> ->
@@ -1292,8 +1298,13 @@ session_established2(El, OldStateData) ->
 					      [NewStateData, FromJID, ToJID]),
 				   Data = check_privacy_route(FromJID, NewStateData, FromJID,
 						       ToJID, NewEl0),
-				   cancel_timer(Data#state.set_offline_tref),
-				   Data#state{is_available = true, set_offline_tref = add_timer(self())};
+			 		case Data#state.is_available of
+			 			false ->
+			 				Data;
+			 			true ->
+						   	cancel_timer(Data#state.set_offline_tref),
+							Data#state{set_offline_tref = add_timer(self())}
+					end;
 		       _ -> NewStateData
 		     end
 	       end,
