@@ -1277,34 +1277,14 @@ session_established2(El, OldStateData) ->
 					    user_send_packet, Server, NewEl,
 					    [NewStateData, FromJID, ToJID]),
 				 Data = check_privacy_route(FromJID, NewStateData,
-						     FromJID, ToJID, NewEl0),
-				 case xml:get_subtag(El, <<"ping">>) of
-				 	false ->
-				 		Data;
-				 	_ ->
-				 		case Data#state.is_available of
-				 			false ->
-				 				Data;
-				 			true ->
-						 		cancel_timer(Data#state.set_offline_tref),
-							 	Data#state{set_offline_tref = add_timer(self())}
-						end
-
-			   	  end
+						     FromJID, ToJID, NewEl0)
 				end;
 		       <<"message">> ->
 				   NewEl0 = ejabberd_hooks:run_fold(
 					      user_send_packet, Server, NewEl,
 					      [NewStateData, FromJID, ToJID]),
 				   Data = check_privacy_route(FromJID, NewStateData, FromJID,
-						       ToJID, NewEl0),
-			 		case Data#state.is_available of
-			 			false ->
-			 				Data;
-			 			true ->
-						   	cancel_timer(Data#state.set_offline_tref),
-							Data#state{set_offline_tref = add_timer(self())}
-					end;
+						       ToJID, NewEl0);
 		       _ -> NewStateData
 		     end
 	       end,
@@ -3243,7 +3223,6 @@ run_change_presence_hook(StateData, Packet) ->
 					    StateData#state.server
 				]
 			),
-			cancel_timer(StateData#state.set_offline_tref),
 			StateData#state{is_available = false};
         <<"Online">> ->
 	        ejabberd_hooks:run(
@@ -3254,21 +3233,10 @@ run_change_presence_hook(StateData, Packet) ->
 						    StateData#state.server
 					]
 			),
-			StateData#state{is_available = true, set_offline_tref = add_timer(self())};
+			StateData#state{is_available = true};
         _ ->  
         	StateData
     end.
-
-
-cancel_timer(Tref) ->
-	case timer:cancel(Tref) of
-		_ ->
-			ok
-	end.
-
-add_timer(FsmRef) ->
-	{ok, Tref} = timer:send_after(?OFFLINETIMEOUT, FsmRef, set_unavailable),
-	Tref.
 
 hex_to_bin(S) when is_binary(S) ->
   hex_to_bin(S, <<>>).
