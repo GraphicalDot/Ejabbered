@@ -54,7 +54,7 @@
 -export([init/1, terminate/2, handle_call/3,
 	 handle_cast/2, handle_info/2, code_change/3]).
 
--export([iq_ping/3, user_online/3, user_offline/3,
+-export([iq_ping/3, user_online/2, user_offline/2,
 	 user_send/4, mod_opt_type/1, depends/2]).
 
 -record(state,
@@ -206,11 +206,13 @@ iq_ping(_From, _To,
 		sub_el = [SubEl, ?ERRT_BAD_REQUEST(Lang, Txt)]}
     end.
 
-user_online(_SID, JID, _Info) ->
-    start_ping_listen(JID#jid.lserver, JID).
+user_online(JID, Server) ->
+    start_ping_listen(JID#jid.lserver, JID),
+    ok.
 
-user_offline(_SID, JID, _Info) ->
-    stop_ping_listen(JID#jid.lserver, JID).
+user_offline(JID, Server) ->
+    stop_ping_listen(JID#jid.lserver, JID),
+    ok.
 
 user_send(Packet, _C2SState, JID, _From) ->
     #xmlel{name = Name, attrs = Attrs} = Packet,

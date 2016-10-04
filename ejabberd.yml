@@ -144,15 +144,15 @@ listen:
   ##
   ## ejabberd_service: Interact with external components (transports, ...)
   ##
-  ## - 
-  ##   port: 8888
-  ##   module: ejabberd_service
-  ##   access: all
-  ##   shaper_rule: fast
-  ##   ip: "127.0.0.1"
-  ##   hosts:
-  ##     "icq.example.org":
-  ##       password: "secret"
+  - 
+    port: 8888
+    module: ejabberd_service
+    access: all
+    shaper_rule: fast
+    ip: "127.0.0.1"
+    hosts:
+      "admin.mm.io":
+        password: "awestrtyuioi"
   ##     "sms.example.org":
   ##       password: "secret"
 
@@ -175,6 +175,7 @@ listen:
     module: ejabberd_http
     request_handlers:
       "/websocket": ejabberd_http_ws
+      "/http-bind": mod_http_bind
     ##  "/pub/archive": mod_http_fileserver
     web_admin: true
     http_bind: true
@@ -505,7 +506,7 @@ access:
     all: allow
   ## Only accounts on the local ejabberd server can create Pubsub nodes:
   pubsub_createnode: 
-    local: allow
+    all: allow
   ## In-band registration allows registration of any possible username.
   ## To disable in-band registration, replace 'allow' with 'deny'.
   register: 
