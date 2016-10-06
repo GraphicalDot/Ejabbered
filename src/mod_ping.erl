@@ -73,11 +73,11 @@ start_link(Host, Opts) ->
     gen_server:start_link({local, Proc}, ?MODULE,
 			  [Host, Opts], []).
 
-start_ping_listen(Host, JID) ->
+start_ping_listen(JID, Host) ->
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
     gen_server:cast(Proc, {start_ping_listen, JID}).
 
-stop_ping_listen(Host, JID) ->
+stop_ping_listen(JID, Host) ->
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
     gen_server:cast(Proc, {stop_ping_listen, JID}).
 
@@ -207,18 +207,20 @@ iq_ping(_From, _To,
     end.
 
 user_online(JID, Server) ->
-    start_ping_listen(JID#jid.lserver, JID),
+    start_ping_listen(JID, Server),
     ok.
 
 user_offline(JID, Server) ->
-    stop_ping_listen(JID#jid.lserver, JID),
+    stop_ping_listen(JID, Server),
     ok.
 
 user_send(Packet, _C2SState, JID, _From) ->
     #xmlel{name = Name, attrs = Attrs} = Packet,
     case Name of 
     	<<"message">> ->
-		    start_ping_listen(JID#jid.lserver, JID);
+        User = JID#jid.luser,
+        Server = JID#jid.lserver,
+		    start_ping_listen(User, Server);
 		_ ->
 			ok
 	end,
@@ -228,23 +230,21 @@ user_send(Packet, _C2SState, JID, _From) ->
 %% Internal functions
 %%====================================================================
 add_timer(JID, Interval, Timers) ->
-     LJID = jlib:jid_tolower(JID),
-    NewTimers = case maps:find(LJID, Timers) of
+    NewTimers = case maps:find(JID, Timers) of
       {ok, OldTRef} ->
 		      cancel_timer(OldTRef),
-          maps:remove(LJID, Timers);
+          maps:remove(JID, Timers);
       _ -> Timers
 		end,
     TRef = erlang:start_timer(Interval * 1000, self(),
 			      {ping, JID}),
-    maps:put(LJID, TRef, NewTimers).
+    maps:put(JID, TRef, NewTimers).
 
 del_timer(JID, Timers) ->
-     LJID = jlib:jid_tolower(JID),
-    case maps:find(LJID, Timers) of
+    case maps:find(JID, Timers) of
       {ok, TRef} ->
 	  cancel_timer(TRef),
-    maps:remove(LJID, Timers);
+    maps:remove(JID, Timers);
       _ -> Timers
     end.
 
