@@ -1277,34 +1277,14 @@ session_established2(El, OldStateData) ->
 					    user_send_packet, Server, NewEl,
 					    [NewStateData, FromJID, ToJID]),
 				 Data = check_privacy_route(FromJID, NewStateData,
-						     FromJID, ToJID, NewEl0),
-				 case xml:get_subtag(El, <<"ping">>) of
-				 	false ->
-				 		Data;
-				 	_ ->
-				 		case Data#state.is_available of
-				 			false ->
-				 				Data;
-				 			true ->
-						 		cancel_timer(Data#state.set_offline_tref),
-							 	Data#state{set_offline_tref = add_timer(self())}
-						end
-
-			   	  end
+						     FromJID, ToJID, NewEl0)
 				end;
 		       <<"message">> ->
 				   NewEl0 = ejabberd_hooks:run_fold(
 					      user_send_packet, Server, NewEl,
 					      [NewStateData, FromJID, ToJID]),
 				   Data = check_privacy_route(FromJID, NewStateData, FromJID,
-						       ToJID, NewEl0),
-			 		case Data#state.is_available of
-			 			false ->
-			 				Data;
-			 			true ->
-						   	cancel_timer(Data#state.set_offline_tref),
-							Data#state{set_offline_tref = add_timer(self())}
-					end;
+						       ToJID, NewEl0);
 		       _ -> NewStateData
 		     end
 	       end,
@@ -1357,7 +1337,7 @@ handle_event(set_unavailable, StateName, StateData) ->
 	From = StateData#state.jid,
 	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
 	NewState = StateData#state{is_available = false},
-	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.user, StateData#state.server]),
+	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.jid]),
 	fsm_next_state(session_established, NewState);
 
 
@@ -3239,36 +3219,22 @@ run_change_presence_hook(StateData, Packet) ->
 	        	status_offline_hook, 
 	        	StateData#state.server,
 				[
-					StateData#state.user,
-					    StateData#state.server
+					StateData#state.jid
 				]
 			),
-			cancel_timer(StateData#state.set_offline_tref),
 			StateData#state{is_available = false};
         <<"Online">> ->
 	        ejabberd_hooks:run(
 		        	status_online_hook, 
 		        	StateData#state.server,
 					[
-						StateData#state.user,
-						    StateData#state.server
+						StateData#state.jid
 					]
 			),
-			StateData#state{is_available = true, set_offline_tref = add_timer(self())};
+			StateData#state{is_available = true};
         _ ->  
         	StateData
     end.
-
-
-cancel_timer(Tref) ->
-	case timer:cancel(Tref) of
-		_ ->
-			ok
-	end.
-
-add_timer(FsmRef) ->
-	{ok, Tref} = timer:send_after(?OFFLINETIMEOUT, FsmRef, set_unavailable),
-	Tref.
 
 hex_to_bin(S) when is_binary(S) ->
   hex_to_bin(S, <<>>).
