@@ -1337,7 +1337,7 @@ handle_event(set_unavailable, StateName, StateData) ->
 	From = StateData#state.jid,
 	presence_broadcast(StateData, From, StateData#state.pres_a, PresencePacket),
 	NewState = StateData#state{is_available = false},
-	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.user, StateData#state.server]),
+	ejabberd_hooks:run(user_unavailable_hook, StateData#state.server, [StateData#state.jid]),
 	fsm_next_state(session_established, NewState);
 
 
@@ -3219,8 +3219,7 @@ run_change_presence_hook(StateData, Packet) ->
 	        	status_offline_hook, 
 	        	StateData#state.server,
 				[
-					StateData#state.user,
-					    StateData#state.server
+					StateData#state.jid
 				]
 			),
 			StateData#state{is_available = false};
@@ -3229,8 +3228,7 @@ run_change_presence_hook(StateData, Packet) ->
 		        	status_online_hook, 
 		        	StateData#state.server,
 					[
-						StateData#state.user,
-						    StateData#state.server
+						StateData#state.jid
 					]
 			),
 			StateData#state{is_available = true};

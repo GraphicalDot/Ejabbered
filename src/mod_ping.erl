@@ -54,7 +54,7 @@
 -export([init/1, terminate/2, handle_call/3,
 	 handle_cast/2, handle_info/2, code_change/3]).
 
--export([iq_ping/3, user_online/2, user_offline/2,
+-export([iq_ping/3, user_online/1, user_offline/1,
 	 user_send/4, mod_opt_type/1, depends/2]).
 
 -record(state,
@@ -73,11 +73,11 @@ start_link(Host, Opts) ->
     gen_server:start_link({local, Proc}, ?MODULE,
 			  [Host, Opts], []).
 
-start_ping_listen(JID, Host) ->
+start_ping_listen(Host, JID) ->
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
     gen_server:cast(Proc, {start_ping_listen, JID}).
 
-stop_ping_listen(JID, Host) ->
+stop_ping_listen(Host, JID) ->
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
     gen_server:cast(Proc, {stop_ping_listen, JID}).
 
@@ -206,21 +206,17 @@ iq_ping(_From, _To,
 		sub_el = [SubEl, ?ERRT_BAD_REQUEST(Lang, Txt)]}
     end.
 
-user_online(JID, Server) ->
-    start_ping_listen(JID, Server),
-    ok.
+user_online(JID) ->
+    start_ping_listen(JID#jid.lserver, JID).
 
-user_offline(JID, Server) ->
-    stop_ping_listen(JID, Server),
-    ok.
+user_offline(JID) ->
+    stop_ping_listen(JID#jid.lserver, JID).
 
 user_send(Packet, _C2SState, JID, _From) ->
     #xmlel{name = Name, attrs = Attrs} = Packet,
     case Name of 
     	<<"message">> ->
-        User = JID#jid.luser,
-        Server = JID#jid.lserver,
-		    start_ping_listen(User, Server);
+		    start_ping_listen(JID#jid.lserver, JID);
 		_ ->
 			ok
 	end,
@@ -230,21 +226,23 @@ user_send(Packet, _C2SState, JID, _From) ->
 %% Internal functions
 %%====================================================================
 add_timer(JID, Interval, Timers) ->
-    NewTimers = case maps:find(JID, Timers) of
+     LJID = jlib:jid_tolower(JID),
+    NewTimers = case maps:find(LJID, Timers) of
       {ok, OldTRef} ->
 		      cancel_timer(OldTRef),
-          maps:remove(JID, Timers);
+          maps:remove(LJID, Timers);
       _ -> Timers
 		end,
     TRef = erlang:start_timer(Interval * 1000, self(),
 			      {ping, JID}),
-    maps:put(JID, TRef, NewTimers).
+    maps:put(LJID, TRef, NewTimers).
 
 del_timer(JID, Timers) ->
-    case maps:find(JID, Timers) of
+     LJID = jlib:jid_tolower(JID),
+    case maps:find(LJID, Timers) of
       {ok, TRef} ->
 	  cancel_timer(TRef),
-    maps:remove(JID, Timers);
+    maps:remove(LJID, Timers);
       _ -> Timers
     end.
 

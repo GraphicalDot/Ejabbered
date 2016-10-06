@@ -20,8 +20,8 @@
 %% Hook callbacks
 -export([on_user_unregister_connection/3,
         on_user_register_connection/3,
-        on_user_unavailable/2,
-        on_user_available/2,
+        on_user_unavailable/1,
+        on_user_available/1,
         on_user_send_message/4
 ]).
 
@@ -114,10 +114,10 @@ on_user_send_message(Packet, _C2SState, _, _) ->
 on_user_presence_update(Packet, User, Server) -> 
     Packet.
 
-on_user_unavailable(User, Server) ->
+on_user_unavailable(#jid{luser = User, lserver = Server}) ->
     set_unavailable(User, Server).
 
-on_user_available(User, Server) ->
+on_user_available(#jid{luser = User, lserver = Server}) ->
     set_available(User, Server).
 
 on_user_unregister_connection(_, #jid{luser = LUser, lserver = LServer}, _) ->
